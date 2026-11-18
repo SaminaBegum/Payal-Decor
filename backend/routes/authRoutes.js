@@ -2,7 +2,11 @@
 const express = require("express");
 const router = express.Router();
 
-const { login } = require("../controllers/authController");
+const {
+  login,
+  changePassword,
+} = require("../controllers/authController");
+
 const authMiddleware = require("../middleware/authMiddleware");
 
 // Authentication router health check
@@ -24,7 +28,10 @@ router.get("/me-test", (req, res) => {
   });
 });
 
-// Protected route
+// Change password (authenticated users)
+router.post("/change-password", authMiddleware, changePassword);
+
+// Protected user profile route
 router.get("/me", authMiddleware, (req, res) => {
   res.status(200).json({
     success: true,
