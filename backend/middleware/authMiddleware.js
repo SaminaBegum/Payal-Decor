@@ -1,5 +1,6 @@
 
 const jwt = require("jsonwebtoken");
+const pool = require("../config/db");
 const { findUserById } = require("../models/userModel");
 
 const authMiddleware = async (req, res, next) => {
@@ -33,7 +34,7 @@ const authMiddleware = async (req, res, next) => {
       issuer: "payal-decor-api",
     });
 
-    // 4. Find the latest user record in PostgreSQL
+    // 4. Retrieve the latest user record
     const user = await findUserById(decoded.id);
 
     if (!user || !user.is_active) {
@@ -43,16 +44,55 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
-    // 5. Attach current user information to the request
+    // 5. Verify linked employee profile is still active
+    if (user.role === "Employee") {
+      const employeeResult = await pool.query(
+        `SELECT status
+         FROM public.employees
+         WHERE user_id = $1
+         LIMIT 1`,
+        [user.id]
+      );
+
+      if (
+        employeeResult.rowCount === 0 ||
+        employeeResult.rows[0].status !== "Active"
+      ) {
+        return res.status(403).json({
+          success: false,
+          message: "Your employee profile is inactive or unavailable. Contact the administrator.",
+        });
+      }
+    }
+
+    // 6. Attach latest user information to the request
     req.user = {
       id: user.id,
       email: user.email,
       role: user.role,
       name: user.full_name,
       department: user.department,
+      mustChangePassword: user.must_change_password,
     };
 
-    // 6. Continue to the protected route
+    // 7. Allow session verification and password change
+    const allowedDuringPasswordChange = [
+      "/me",
+      "/change-password",
+    ];
+
+    // 8. Restrict normal API access until password is changed
+    if (
+      user.must_change_password &&
+      !allowedDuringPasswordChange.includes(req.path)
+    ) {
+      return res.status(403).json({
+        success: false,
+        mustChangePassword: true,
+        message: "Please change your temporary password before continuing.",
+      });
+    }
+
     return next();
 
   } catch (error) {

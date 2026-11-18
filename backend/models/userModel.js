@@ -11,7 +11,8 @@ const findUserByEmail = async (email) => {
       password_hash,
       role,
       department,
-      is_active
+      is_active,
+      must_change_password
     FROM public.users
     WHERE LOWER(email) = LOWER($1)
     LIMIT 1
@@ -32,6 +33,7 @@ const findUserById = async (id) => {
       role,
       department,
       is_active,
+      must_change_password,
       created_at,
       updated_at
     FROM public.users
@@ -68,6 +70,7 @@ const createUser = async ({
       role,
       department,
       is_active,
+      must_change_password,
       created_at,
       updated_at
   `;
