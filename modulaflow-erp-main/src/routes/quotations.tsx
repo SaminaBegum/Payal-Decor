@@ -68,7 +68,7 @@ interface Quotation {
   customerName: string;
   customerAddress: string;
   projectName: string;
-  estimateId:  null;
+  estimateId: string | null;
   quotationDate: string;
   validUntil: string;
   status: string;
