@@ -147,36 +147,7 @@ const LOCAL_STORAGE_KEY = "payal_decor_operations_tasks_v10";
 
 
 // Configured employees: Disha, Gaurav (Project Manager), Sairaj, and Saniya
-export const INITIAL_EMPLOYEES: Employee[] = [
-  {
-    id: "emp-disha",
-    name: "Disha",
-    email: "disha@payaldecor.com",
-    role: "Software Developer",
-    department: "Software & Operations",
-    phone: "+91 98765 43210",
-    avatarColor: "bg-purple-100 text-purple-700 border-purple-200",
-  },
-  {
-    id: "emp-gaurav",
-    name: "Gaurav",
-    email: "gaurav@payaldecor.com",
-    role: "Project Manager",
-    department: "Operations & Project Control",
-    phone: "+91 98765 43213",
-    avatarColor: "bg-emerald-100 text-emerald-700 border-emerald-200",
-  },
- 
-  {
-    id: "emp-saniya",
-    name: "Saniya",
-    email: "saniya@payaldecor.com",
-    role: "Design & Documentation Lead",
-    department: "Data & Documentation",
-    phone: "+91 98765 43212",
-    avatarColor: "bg-pink-100 text-pink-700 border-pink-200",
-  },
-];
+
 
 // Exact dataset transcribed from Payal Decor Daily Task & Execution Tracker (PD-001 to PD-050)
 // Configured strictly across Disha, Gaurav, Sairaj, and Saniya
@@ -409,7 +380,7 @@ function getStatusBadge(status: TaskStatus) {
 
 function OperationsPage() {
   const [tasks, setTasks] = useState<OperationTask[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>(INITIAL_EMPLOYEES);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Search & Filters
@@ -425,6 +396,7 @@ function OperationsPage() {
   // Anyone without logging in as another employee cannot see their tasks!
   // ============================================================
  
+
 const [currentSession, setCurrentSession] = useState<AuthSession>(() => {
   const authUser = getCurrentUser();
 
@@ -434,6 +406,7 @@ const [currentSession, setCurrentSession] = useState<AuthSession>(() => {
       email: "",
       role: "",
       isAdmin: false,
+      mustChangePassword: false,
     };
   }
 
@@ -442,8 +415,10 @@ const [currentSession, setCurrentSession] = useState<AuthSession>(() => {
     email: authUser.email,
     role: authUser.role,
     isAdmin: authUser.isAdmin,
+    mustChangePassword: authUser.mustChangePassword,
   };
 });
+
 
 
   // Login Modal State (Supports Admin & Individual Employee with own passwords)
@@ -454,7 +429,10 @@ const [currentSession, setCurrentSession] = useState<AuthSession>(() => {
   const [modalPassword, setModalPassword] = useState("");
   const [showModalPassword, setShowModalPassword] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
-const [showPasswordChange, setShowPasswordChange] = useState(false);
+const [showPasswordChange, setShowPasswordChange] = useState(() => {
+  const authUser = getCurrentUser();
+  return Boolean(authUser && !authUser.isAdmin && authUser.mustChangePassword);
+});
 const [currentPassword, setCurrentPassword] = useState("");
 const [newPassword, setNewPassword] = useState("");
 const [confirmNewPassword, setConfirmNewPassword] = useState("");
@@ -679,15 +657,7 @@ if (res.user.mustChangePassword) {
   // Log Out / Clear Session
 const handleLogout = () => {
   logout();
-  setCurrentSession({
-    name: "",
-    email: "",
-    role: "",
-    isAdmin: false,
-  });
-  setModalPassword("");
-  setLoginError(null);
-  setShowLoginModal(true);
+  window.location.replace("/login");
 };
 
   // Load employees from localStorage
@@ -722,26 +692,16 @@ useEffect(() => {
         throw new Error(data.message || "Unable to load employees.");
       }
 
-      const apiEmployees: Employee[] = data.employees.map((item: any) => {
-        const existing = INITIAL_EMPLOYEES.find(
-          (emp) =>
-            emp.name.toLowerCase() ===
-            String(item.full_name || "").toLowerCase()
-        );
-
-        return {
-          id: String(item.id),
-          name: item.full_name || "",
-          email: item.email || "",
-          role: item.designation || "",
-          department: item.department || "",
-          phone: item.phone || "",
-          status: item.status === "Inactive" ? "Inactive" : "Active",
-          avatarColor:
-            existing?.avatarColor ||
-            "bg-indigo-100 text-indigo-700 border-indigo-200",
-        };
-      });
+      const apiEmployees: Employee[] = data.employees.map((item: any) => ({
+  id: String(item.id),
+  name: item.full_name || "",
+  email: item.email || "",
+  role: item.designation || "",
+  department: item.department || "",
+  phone: item.phone || "",
+  status: item.status === "Inactive" ? "Inactive" : "Active",
+  avatarColor: "bg-indigo-100 text-indigo-700 border-indigo-200",
+}));
 
       setEmployees(apiEmployees);
 
@@ -2497,6 +2457,54 @@ return (
   </div>
 )}
 
+                {/* Password input with toggle */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    {modalLoginRole === "admin" ? "Admin Password" : "Employee Password"}{" "}
+                    <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showModalPassword ? "text" : "password"}
+                      required
+                      value={modalPassword}
+                      onChange={(e) => setModalPassword(e.target.value)}
+                      placeholder={
+                        modalLoginRole === "admin"
+                          ? "Enter admin password"
+                          : "Enter your employee password"
+                      }
+                      className={`${inputClass} pr-10`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowModalPassword((v) => !v)}
+                      aria-label={showModalPassword ? "Hide password" : "Show password"}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                    >
+                      {showModalPassword ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-gray-400 mt-1">
+                    {modalLoginRole === "admin"
+                      ? "Admin access unlocks master visibility across all 47 tasks."
+                      : "Employee accounts show strictly the tasks assigned to that employee."}
+                  </p>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-purple-700 px-4 py-2.5 text-sm font-semibold text-white shadow-xs hover:bg-purple-800 transition-colors"
+                >
+                  <LogIn className="h-4 w-4" />
+                  Sign In to Workspace
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================ */}
 {showPasswordChange && (
   <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4">
     <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl">
@@ -2577,55 +2585,8 @@ return (
 
                
 
-                {/* Password input with toggle */}
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    {modalLoginRole === "admin" ? "Admin Password" : "Employee Password"}{" "}
-                    <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showModalPassword ? "text" : "password"}
-                      required
-                      value={modalPassword}
-                      onChange={(e) => setModalPassword(e.target.value)}
-                      placeholder={
-                        modalLoginRole === "admin"
-                          ? "Enter admin password"
-                          : "Enter your employee password"
-                      }
-                      className={`${inputClass} pr-10`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowModalPassword((v) => !v)}
-                      aria-label={showModalPassword ? "Hide password" : "Show password"}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
-                    >
-                      {showModalPassword ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-                    </button>
-                  </div>
-                  <p className="text-[11px] text-gray-400 mt-1">
-                    {modalLoginRole === "admin"
-                      ? "Admin access unlocks master visibility across all 47 tasks."
-                      : "Employee accounts show strictly the tasks assigned to that employee."}
-                  </p>
-                </div>
 
-                <button
-                  type="submit"
-                  className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-purple-700 px-4 py-2.5 text-sm font-semibold text-white shadow-xs hover:bg-purple-800 transition-colors"
-                >
-                  <LogIn className="h-4 w-4" />
-                  Sign In to Workspace
-                </button>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* ============================================================ */}
-        {/* IMPORT TASKS MODAL (JUST SIDE OF EXPORT)                    */}
+                {/* IMPORT TASKS MODAL (JUST SIDE OF EXPORT)                    */}
         {/* ============================================================ */}
         {showImportModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 p-4 backdrop-blur-xs overflow-y-auto">
@@ -3877,4 +3838,3 @@ return (
 }
 
 export default OperationsPage;
-
