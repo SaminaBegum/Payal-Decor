@@ -8,7 +8,6 @@ const {
   updateLead,
   deleteLead,
   syncLeads,
-  getCustomers,
 } = require("../controllers/crmController");
 
 // Health check
@@ -18,9 +17,6 @@ router.get("/ping", (req, res) => {
     message: "CRM API routes are reachable and healthy",
   });
 });
-
-// Customers endpoint for ERP cross-module linkage
-router.get("/customers", getCustomers);
 
 // Bulk sync endpoint (supports both /crm/leads/sync and /crm/sync)
 router.post("/leads/sync", syncLeads);

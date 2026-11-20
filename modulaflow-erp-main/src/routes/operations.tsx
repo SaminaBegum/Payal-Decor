@@ -36,7 +36,7 @@ import { AppShell } from "@/components/erp/AppShell";
 import { loginAdmin, loginEmployee, getCurrentUser, logout } from "@/lib/auth";
 
 const API_BASE = (
-  import.meta.env["VITE_API_URL"] || "http://localhost:5001/api"
+  import.meta.env["VITE_API_URL"] || "http://localhost:5000/api"
 ).replace(/\/+$/, "");
 
 export type PriorityLevel = "Critical" | "Urgent" | "High" | "Medium" | "Low";

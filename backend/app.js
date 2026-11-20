@@ -7,7 +7,12 @@ const app = express();
 // Import routes
 const authRoutes = require("./routes/authRoutes");
 const crmRoutes = require("./routes/crmRoutes");
-const customerRoutes = require("./routes/customerRoutes");
+const estimationRoutes = require("./routes/estimationRoutes");
+const bomRoutes = require("./routes/bomRoutes");
+const leadRoutes = require("./routes/leadRoutes");
+const measurementRoutes = require("./routes/measurementRoutes");
+const estimateDocRoutes = require("./routes/estimateDocRoutes");
+const quotationRoutes = require("./routes/quotationRoutes");
 
 // CORS configuration
 app.use(cors(corsOptions));
@@ -36,7 +41,25 @@ app.use(
 // CRM routes
 app.use("/api/crm", crmRoutes);
 
-// Customer routes (for ERP cross-module linkage)
-app.use("/api/customers", customerRoutes);
+// Estimation & BOQ routes
+app.use("/api/estimation", estimationRoutes);
+app.use("/api/estimations", estimationRoutes);
+
+// Quotation routes
+app.use("/api/quotations", quotationRoutes);
+app.use("/quotations", quotationRoutes);
+
+// BOM & Material Requirement routes
+app.use("/api/bom", bomRoutes);
+
+// Lead Enquiries routes
+app.use("/api/lead-enquiries", leadRoutes);
+
+// Site Measurements routes
+app.use("/api/site-measurements", measurementRoutes);
+
+// Estimate Documents (PDF format print builder)
+app.use("/api/estimate-docs", estimateDocRoutes);
+app.use("/estimate-docs", estimateDocRoutes);
 
 module.exports = app;

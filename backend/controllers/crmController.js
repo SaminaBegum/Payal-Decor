@@ -203,28 +203,6 @@ const syncLeads = async (req, res) => {
   }
 };
 
-/**
- * GET /api/crm/customers
- */
-const getCustomers = async (req, res) => {
-  try {
-    const customers = await crmService.getCustomers();
-    return res.status(200).json({
-      success: true,
-      count: customers.length,
-      data: customers,
-      customers,
-    });
-  } catch (error) {
-    console.error("Error in getCustomers controller:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to fetch customers",
-      error: error.message,
-    });
-  }
-};
-
 module.exports = {
   getLeads,
   getLeadById,
@@ -232,5 +210,4 @@ module.exports = {
   updateLead,
   deleteLead,
   syncLeads,
-  getCustomers,
 };

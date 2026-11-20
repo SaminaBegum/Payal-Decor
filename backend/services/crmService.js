@@ -1,5 +1,4 @@
 const crmModel = require("../models/crmModel");
-const customerModel = require("../models/customerModel");
 
 const getAllLeads = async (filters) => {
   return await crmModel.getAllLeads(filters);
@@ -25,10 +24,6 @@ const syncLeads = async (leadsArray) => {
   return await crmModel.syncLeads(leadsArray);
 };
 
-const getCustomers = async () => {
-  return await customerModel.getAllCustomers();
-};
-
 module.exports = {
   getAllLeads,
   getLeadById,
@@ -36,5 +31,4 @@ module.exports = {
   updateLead,
   deleteLead,
   syncLeads,
-  getCustomers,
 };

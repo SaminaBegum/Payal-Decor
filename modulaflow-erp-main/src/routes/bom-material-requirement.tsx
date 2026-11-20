@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { AppShell } from "@/components/erp/AppShell";
 
-const API = `${import.meta.env.VITE_API_URL || "http://localhost:5001/api"}`;
+const API = `${import.meta.env.VITE_API_URL || "http://localhost:5000/api"}`;
 
 type WorkOrder = {
   id: string;
