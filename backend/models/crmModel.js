@@ -1,4 +1,5 @@
 const pool = require("../config/db");
+const crypto = require("crypto");
 
 /**
  * Fetch all CRM leads with optional search and filters
@@ -183,7 +184,7 @@ const findLeadByBusinessName = async (businessName) => {
  */
 const createLead = async (leadData) => {
   const {
-    id = `crm-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    id = `crm-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
     source = "Meta",
     businessName = null,
     category = null,
