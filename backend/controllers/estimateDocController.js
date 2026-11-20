@@ -43,7 +43,7 @@ const getEstimateDocById = async (req, res) => {
       data: estimate,
     });
   } catch (error) {
-    console.error(`Error in getEstimateDocById (${req.params.id}):`, error);
+    console.error("Error in getEstimateDocById (%s):", req.params.id, error);
     return res.status(500).json({
       success: false,
       message: "Failed to fetch estimate document",
