@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Plus,
   Search,
@@ -31,12 +31,21 @@ import {
   LogOut,
   KeyRound,
   UserCheck,
+  Users,
+
+Building2,
 } from "lucide-react";
 import { AppShell } from "@/components/erp/AppShell";
-import { loginAdmin, loginEmployee, getCurrentUser, logout } from "@/lib/auth";
+import {
+  loginAdmin,
+  loginEmployee,
+  getCurrentUser,
+  getAuthToken,
+  logout,
+} from "@/lib/auth";
 
 const API_BASE = (
-  import.meta.env["VITE_API_URL"] || "http://localhost:5001/api"
+  import.meta.env["VITE_API_URL"] || "http://localhost:5000/api"
 ).replace(/\/+$/, "");
 
 export type PriorityLevel = "Critical" | "Urgent" | "High" | "Medium" | "Low";
@@ -49,6 +58,7 @@ export type TaskStatus =
   | "Pending"
   | "Under Review";
 
+
 export interface Employee {
   id: string;
   name: string;
@@ -57,13 +67,16 @@ export interface Employee {
   department: string;
   phone?: string;
   avatarColor?: string;
+  status: "Active" | "Inactive";
 }
+
 
 export interface AuthSession {
   name: string;
   email: string;
   role: string;
   isAdmin: boolean;
+  mustChangePassword?: boolean;
 }
 
 export interface OperationTask {
@@ -130,40 +143,11 @@ export const PRIORITY_OPTIONS: PriorityLevel[] = [
 ];
 
 const LOCAL_STORAGE_KEY = "payal_decor_operations_tasks_v10";
-const EMPLOYEES_STORAGE_KEY = "payal_decor_employees_v4";
+
 
 
 // Configured employees: Disha, Gaurav (Project Manager), Sairaj, and Saniya
-export const INITIAL_EMPLOYEES: Employee[] = [
-  {
-    id: "emp-disha",
-    name: "Disha",
-    email: "disha@payaldecor.com",
-    role: "Software Developer",
-    department: "Software & Operations",
-    phone: "+91 98765 43210",
-    avatarColor: "bg-purple-100 text-purple-700 border-purple-200",
-  },
-  {
-    id: "emp-gaurav",
-    name: "Gaurav",
-    email: "gaurav@payaldecor.com",
-    role: "Project Manager",
-    department: "Operations & Project Control",
-    phone: "+91 98765 43213",
-    avatarColor: "bg-emerald-100 text-emerald-700 border-emerald-200",
-  },
- 
-  {
-    id: "emp-saniya",
-    name: "Saniya",
-    email: "saniya@payaldecor.com",
-    role: "Design & Documentation Lead",
-    department: "Data & Documentation",
-    phone: "+91 98765 43212",
-    avatarColor: "bg-pink-100 text-pink-700 border-pink-200",
-  },
-];
+
 
 // Exact dataset transcribed from Payal Decor Daily Task & Execution Tracker (PD-001 to PD-050)
 // Configured strictly across Disha, Gaurav, Sairaj, and Saniya
@@ -249,7 +233,7 @@ const emptyFormData = (autoId: string = "PD-001", defaultEmployee: string = "Dis
 });
 
 function formatDateDisplay(val: string) {
-  if (!val) return "—";
+  if (!val) return "â€”";
   const d = new Date(val);
   if (isNaN(d.getTime())) return val;
   return d.toLocaleDateString("en-IN", {
@@ -396,7 +380,7 @@ function getStatusBadge(status: TaskStatus) {
 
 function OperationsPage() {
   const [tasks, setTasks] = useState<OperationTask[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>(INITIAL_EMPLOYEES);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Search & Filters
@@ -412,6 +396,7 @@ function OperationsPage() {
   // Anyone without logging in as another employee cannot see their tasks!
   // ============================================================
  
+
 const [currentSession, setCurrentSession] = useState<AuthSession>(() => {
   const authUser = getCurrentUser();
 
@@ -421,6 +406,7 @@ const [currentSession, setCurrentSession] = useState<AuthSession>(() => {
       email: "",
       role: "",
       isAdmin: false,
+      mustChangePassword: false,
     };
   }
 
@@ -429,19 +415,29 @@ const [currentSession, setCurrentSession] = useState<AuthSession>(() => {
     email: authUser.email,
     role: authUser.role,
     isAdmin: authUser.isAdmin,
+    mustChangePassword: authUser.mustChangePassword,
   };
 });
+
 
 
   // Login Modal State (Supports Admin & Individual Employee with own passwords)
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [modalLoginRole, setModalLoginRole] = useState<"admin" | "employee">("employee");
   const [modalAdminId, setModalAdminId] = useState("admin");
-  const [modalEmployeeId, setModalEmployeeId] = useState("gaurav");
+  const [modalEmployeeId, setModalEmployeeId] = useState("");
   const [modalPassword, setModalPassword] = useState("");
   const [showModalPassword, setShowModalPassword] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
-
+const [showPasswordChange, setShowPasswordChange] = useState(() => {
+  const authUser = getCurrentUser();
+  return Boolean(authUser && !authUser.isAdmin && authUser.mustChangePassword);
+});
+const [currentPassword, setCurrentPassword] = useState("");
+const [newPassword, setNewPassword] = useState("");
+const [confirmNewPassword, setConfirmNewPassword] = useState("");
+const [passwordChangeError, setPasswordChangeError] = useState<string | null>(null);
+const [passwordChangeLoading, setPasswordChangeLoading] = useState(false);
   // Modal / Form state
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -459,12 +455,29 @@ const [currentSession, setCurrentSession] = useState<AuthSession>(() => {
 
   // Add Employee Modal state
   const [showEmployeeModal, setShowEmployeeModal] = useState(false);
+  const [showAddEmployeeFormModal, setShowAddEmployeeFormModal] = useState(false);
+  const [employeeCredentials, setEmployeeCredentials] = useState<{
+  name: string;
+  email: string;
+  temporaryPassword: string;
+} | null>(null);
+const [employeeSearch, setEmployeeSearch] = useState("");
+const [employeeDepartmentFilter, setEmployeeDepartmentFilter] = useState("All Departments");
+const [employeePage, setEmployeePage] = useState(1);
+const employeesPerPage = 5;
   const [newEmpName, setNewEmpName] = useState("");
   const [newEmpRole, setNewEmpRole] = useState("Software Developer");
   const [newEmpDept, setNewEmpDept] = useState("Software & Operations");
   const [newEmpEmail, setNewEmpEmail] = useState("");
   const [newEmpPhone, setNewEmpPhone] = useState("");
-
+// Edit Employee Modal state
+const [showEditEmployeeModal, setShowEditEmployeeModal] = useState(false);
+const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+const [editEmpName, setEditEmpName] = useState("");
+const [editEmpRole, setEditEmpRole] = useState("");
+const [editEmpDept, setEditEmpDept] = useState("");
+const [editEmpEmail, setEditEmpEmail] = useState("");
+const [editEmpPhone, setEditEmpPhone] = useState("");
   const [feedbackMsg, setFeedbackMsg] = useState<{
     type: "success" | "error";
     text: string;
@@ -476,7 +489,93 @@ const [currentSession, setCurrentSession] = useState<AuthSession>(() => {
 };
 
   // Perform Login with Password Verification
- 
+ const handleChangePassword = async (
+  event: React.FormEvent<HTMLFormElement>
+) => {
+  event.preventDefault();
+
+  setPasswordChangeError(null);
+
+  if (!currentPassword || !newPassword || !confirmNewPassword) {
+    setPasswordChangeError("Please fill in all password fields.");
+    return;
+  }
+
+  if (newPassword.length < 8) {
+    setPasswordChangeError(
+      "Your new password must contain at least 8 characters."
+    );
+    return;
+  }
+
+  if (newPassword !== confirmNewPassword) {
+    setPasswordChangeError("New password and confirmation do not match.");
+    return;
+  }
+
+  if (currentPassword === newPassword) {
+    setPasswordChangeError(
+      "Your new password must be different from your temporary password."
+    );
+    return;
+  }
+
+  const token = getAuthToken();
+
+  if (!token) {
+    setPasswordChangeError("Your login session has expired. Please log in again.");
+    return;
+  }
+
+  setPasswordChangeLoading(true);
+
+  try {
+    const response = await fetch(`${API_BASE}/auth/change-password`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        currentPassword,
+        newPassword,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      setPasswordChangeError(
+        data.message || "Unable to change your password. Please try again."
+      );
+      return;
+    }
+
+    setCurrentSession((previous) =>
+      previous
+        ? { ...previous, mustChangePassword: false }
+        : previous
+    );
+
+    setShowPasswordChange(false);
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmNewPassword("");
+
+    setFeedbackMsg({
+      type: "success",
+      text: "Password changed successfully. You can now access your assigned tasks.",
+    });
+  } catch (error) {
+    console.error("Password change error:", error);
+    setPasswordChangeError(
+      "Cannot connect to the server. Please check that the backend is running."
+    );
+  } finally {
+    setPasswordChangeLoading(false);
+  }
+};
 const handlePerformLogin = async (e: React.FormEvent) => {
   e.preventDefault();
   setLoginError(null);
@@ -512,7 +611,7 @@ const handlePerformLogin = async (e: React.FormEvent) => {
   } else {
     if (!modalEmployeeId || !modalPassword) {
       setLoginError(
-        "Please select your employee profile and enter your password."
+       "Please enter your registered employee email and password."
       );
       return;
     }
@@ -525,21 +624,30 @@ const handlePerformLogin = async (e: React.FormEvent) => {
     }
 
     if (res.user) {
-      const empSession: AuthSession = {
-        name: res.user.name,
-        email: res.user.email,
-        role: res.user.role,
-        isAdmin: false,
-      };
+     const empSession: AuthSession = {
+  name: res.user.name,
+  email: res.user.email,
+  role: res.user.role,
+  isAdmin: false,
+  mustChangePassword: Boolean(res.user.mustChangePassword),
+};
 
-      saveAuthSession(empSession);
-      setShowLoginModal(false);
-      setModalPassword("");
+saveAuthSession(empSession);
+setShowLoginModal(false);
+setModalPassword("");
 
-      setFeedbackMsg({
-        type: "success",
-        text: `Welcome back, ${res.user.name}! Showing only your assigned tasks.`,
-      });
+if (res.user.mustChangePassword) {
+  setCurrentPassword("");
+  setNewPassword("");
+  setConfirmNewPassword("");
+  setPasswordChangeError(null);
+  setShowPasswordChange(true);
+} else {
+  setFeedbackMsg({
+    type: "success",
+    text: `Welcome back, ${res.user.name}! Showing only your assigned tasks.`,
+  });
+}
     }
   }
 };
@@ -549,171 +657,140 @@ const handlePerformLogin = async (e: React.FormEvent) => {
   // Log Out / Clear Session
 const handleLogout = () => {
   logout();
-  setCurrentSession({
-    name: "",
-    email: "",
-    role: "",
-    isAdmin: false,
-  });
-  setModalPassword("");
-  setLoginError(null);
-  setShowLoginModal(true);
+  window.location.replace("/login");
 };
 
   // Load employees from localStorage
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(EMPLOYEES_STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // Keep only Disha, Sairaj, Saniya as base, plus any custom user-added
-          const baseNames = new Set(INITIAL_EMPLOYEES.map((e) => e.name.toLowerCase()));
-          const userAdded = parsed.filter(
-            (e: Employee) =>
-              !baseNames.has(e.name.toLowerCase()) &&
-              !["rahul pawar", "sneha patil", "pooja kulkarni", "amit sharma", "vikram singh"].includes(
-                e.name.toLowerCase()
-              )
-          );
-          setEmployees([...INITIAL_EMPLOYEES, ...userAdded]);
-          return;
-        }
-      }
-    } catch {
-      // ignore
+  // Load employees from PostgreSQL
+// Load employees from PostgreSQL whenever Admin session becomes active
+useEffect(() => {
+  const loadEmployees = async () => {
+    if (!currentSession.isAdmin) {
+      setEmployees([]);
+      return;
     }
-    setEmployees(INITIAL_EMPLOYEES);
-  }, []);
 
-  // Persist employees
-  const persistEmployees = (list: Employee[]) => {
-    setEmployees(list);
+    const token = getAuthToken();
+
+    if (!token) {
+      setEmployees([]);
+      return;
+    }
+
     try {
-      localStorage.setItem(EMPLOYEES_STORAGE_KEY, JSON.stringify(list));
-    } catch {
-      // ignore
+      const response = await fetch(`${API_BASE}/employees`, {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success || !Array.isArray(data.employees)) {
+        throw new Error(data.message || "Unable to load employees.");
+      }
+
+      const apiEmployees: Employee[] = data.employees.map((item: any) => ({
+  id: String(item.id),
+  name: item.full_name || "",
+  email: item.email || "",
+  role: item.designation || "",
+  department: item.department || "",
+  phone: item.phone || "",
+  status: item.status === "Inactive" ? "Inactive" : "Active",
+  avatarColor: "bg-indigo-100 text-indigo-700 border-indigo-200",
+}));
+
+      setEmployees(apiEmployees);
+
+      console.log("Employees loaded from PostgreSQL:", apiEmployees.length);
+    } catch (error) {
+      console.error("Employee loading failed:", error);
+      setEmployees([]);
+      setFeedbackMsg({
+        type: "error",
+        text: "Unable to load employees from the database. Please refresh and try again.",
+      });
     }
   };
 
+  void loadEmployees();
+}, [currentSession.isAdmin]);
+  
+
   // Load tasks: Preserve user's PD-001 to PD-047 with employee assignments
+ 
+  // Load tasks exclusively from PostgreSQL
   const loadTasks = useCallback(async () => {
     setLoading(true);
 
-    let initialList = [...PDF_TASKS_DATA];
-
     try {
-      const stored =
-        localStorage.getItem(LOCAL_STORAGE_KEY) ||
-        localStorage.getItem("payal_decor_operations_tasks_v8") ||
-        localStorage.getItem("payal_decor_operations_tasks_v7");
+      const token = getAuthToken();
 
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // Remap any old names to Disha, Gaurav, Sairaj, Saniya
-          const updatedWithCleanEmployees = parsed.map((item: any) => {
-            if (item.taskId === "PD-048")
-              return { ...item, employee: "Disha", remarks: item.remarks || "Assigned to Disha" };
-            if (item.taskId === "PD-049")
-              return { ...item, employee: "Sairaj", remarks: item.remarks || "Assigned to Sairaj" };
-            if (item.taskId === "PD-050")
-              return { ...item, employee: "Sairaj", remarks: item.remarks || "Assigned to Sairaj" };
-            const rawEmp = String(item.employee || "").trim().toLowerCase();
-            if (rawEmp.includes("disha")) return { ...item, employee: "Disha" };
-            if (rawEmp.includes("gaurav")) return { ...item, employee: "Gaurav" };
-            if (rawEmp.includes("sairaj")) return { ...item, employee: "Sairaj" };
-            if (rawEmp.includes("saniya")) return { ...item, employee: "Saniya" };
-
-            // Map roles if unassigned
-            const pr = String(item.primaryResponsible || "").toLowerCase();
-            if (pr.includes("software") || pr.includes("developer")) return { ...item, employee: "Disha" };
-            if (pr.includes("project manager")) return { ...item, employee: "Gaurav" };
-            if (pr.includes("marketing") || pr.includes("data") || pr.includes("profile")) return { ...item, employee: "Saniya" };
-            return { ...item, employee: "Sairaj" };
-          });
-
-          const taskMap = new Map<string, OperationTask>();
-          for (const item of updatedWithCleanEmployees) {
-            taskMap.set(item.taskId, item);
-          }
-          // Ensure all official PDF/spreadsheet tasks are present and updated
-          for (const required of PDF_TASKS_DATA) {
-            if (!taskMap.has(required.taskId)) {
-              taskMap.set(required.taskId, required);
-            } else if (["PD-048", "PD-049", "PD-050"].includes(required.taskId)) {
-              const existing = taskMap.get(required.taskId)!;
-              taskMap.set(required.taskId, {
-                ...existing,
-                ...required,
-                remarks: existing.remarks || required.remarks,
-              });
-            }
-          }
-          initialList = Array.from(taskMap.values());
-          initialList.sort((a, b) => {
-            const numA = parseInt((a.taskId || "").replace(/\D/g, "") || "0", 10);
-            const numB = parseInt((b.taskId || "").replace(/\D/g, "") || "0", 10);
-            return numA - numB;
-          });
-        }
+      if (!token) {
+        throw new Error("Your login session has expired. Please log in again.");
       }
-    } catch {
-      // ignore
-    }
 
-    // Try fetching from backend API if available
-    try {
       const res = await fetch(`${API_BASE}/operations`, {
-        headers: { Accept: "application/json" },
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`,
+        },
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && Array.isArray(data.tasks) && data.tasks.length > 0) {
-          const apiTasks = data.tasks.map((item: any) => {
-            let emp = item.employee || "Disha";
-            if (emp.toLowerCase().includes("disha")) emp = "Disha";
-            else if (emp.toLowerCase().includes("gaurav")) emp = "Gaurav";
-            else if (emp.toLowerCase().includes("sairaj")) emp = "Sairaj";
-            else if (emp.toLowerCase().includes("saniya")) emp = "Saniya";
 
-            return {
-              id: String(item.id),
-              taskId: item.taskId || "PD-001",
-              workstream: item.workstream || "General",
-              taskActivity: item.taskActivity || "",
-              priority: (item.priority || "Medium") as PriorityLevel,
-              employee: emp,
-              primaryResponsible: item.primaryResponsible || "",
-              supportingRole: item.supportingRole || "",
-              expectedDeliverable: item.expectedDeliverable || "",
-              targetDate: item.targetDate
-                ? String(item.targetDate).slice(0, 10)
-                : "",
-              status: (item.status || "Not Started") as TaskStatus,
-              remarks: item.remarks || "",
-              others: "",
-              createdAt: item.createdAt,
-            };
-          });
+      const data = await res.json();
 
-          const apiIds = new Set(apiTasks.map((t: any) => t.taskId));
-          const missingPdfTasks = PDF_TASKS_DATA.filter((p) => !apiIds.has(p.taskId));
-          initialList = [...apiTasks, ...missingPdfTasks];
-        }
+      if (!res.ok || !data.success || !Array.isArray(data.tasks)) {
+        throw new Error(data.message || "Unable to load Operations tasks.");
       }
-    } catch {
-      // Backend not running, local storage data is used
-    }
 
-    setTasks(initialList);
-    try {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(initialList));
-    } catch {
-      // ignore
+      const apiTasks: OperationTask[] = data.tasks.map((item: any) => {
+        let emp = String(item.employee || "").toLowerCase();
+
+        if (emp.includes("disha")) emp = "Disha";
+        else if (emp.includes("gaurav")) emp = "Gaurav";
+        else if (emp.includes("sairaj")) emp = "Sairaj";
+        else if (emp.includes("saniya")) emp = "Saniya";
+        else emp = item.employee || "";
+
+        return {
+          id: String(item.id),
+          taskId: item.taskId,
+          workstream: item.workstream || "General",
+          taskActivity: item.taskActivity || "",
+          priority: (item.priority || "Medium") as PriorityLevel,
+          employee: emp,
+          primaryResponsible: item.primaryResponsible || "",
+          supportingRole: item.supportingRole || "",
+          expectedDeliverable: item.expectedDeliverable || "",
+          targetDate: item.targetDate
+            ? String(item.targetDate).slice(0, 10)
+            : "",
+          status: (item.status || "Not Started") as TaskStatus,
+          remarks: item.remarks || "",
+          others: item.others || "",
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+        };
+      });
+
+      setTasks(apiTasks);
+    } catch (error) {
+      console.error("Operations loading error:", error);
+      setTasks([]);
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to connect to the Operations database."
+      );
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
+
 
   useEffect(() => {
     void loadTasks();
@@ -821,8 +898,11 @@ const handleLogout = () => {
   };
 
   // Save Task (Create or Update)
+
+  // Save Task (Create or Update)
   const handleSaveTask = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!form.taskActivity.trim()) {
       setFeedbackMsg({
         type: "error",
@@ -830,6 +910,7 @@ const handleLogout = () => {
       });
       return;
     }
+
     if (!form.primaryResponsible.trim()) {
       setFeedbackMsg({
         type: "error",
@@ -838,94 +919,84 @@ const handleLogout = () => {
       return;
     }
 
+    const token = getAuthToken();
+
+    if (!token) {
+      setFeedbackMsg({
+        type: "error",
+        text: "Your login session has expired. Please log in again.",
+      });
+      return;
+    }
+
     setSaving(true);
     setFeedbackMsg(null);
 
-    let finalTaskId = form.taskId.trim().toUpperCase();
-    if (!finalTaskId) {
-      finalTaskId = getNextTaskId(tasks);
-    } else if (!finalTaskId.startsWith("PD-")) {
-      finalTaskId = `PD-${finalTaskId}`;
-    }
-
-    const payload = {
-      ...form,
-      taskId: finalTaskId,
-      employee: currentSession.isAdmin ? form.employee : currentSession.name,
-      others: "",
-    };
-
-    let updatedTasks = [...tasks];
-
-    // Attempt backend save
     try {
-      if (editingId) {
-        const res = await fetch(`${API_BASE}/operations/${editingId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        if (res.ok) {
-          const resData = await res.json();
-          if (resData.success && resData.task) {
-            updatedTasks = updatedTasks.map((t) =>
-              t.id === editingId ? { ...t, ...payload, id: editingId } : t
-            );
-          }
-        } else {
-          updatedTasks = updatedTasks.map((t) =>
-            t.id === editingId ? { ...t, ...payload } : t
-          );
-        }
-      } else {
-        const res = await fetch(`${API_BASE}/operations`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        if (res.ok) {
-          const resData = await res.json();
-          if (resData.success && resData.task) {
-            const created = {
-              ...payload,
-              id: String(resData.task.id),
-              createdAt: resData.task.createdAt || new Date().toISOString(),
-            };
-            updatedTasks = [created, ...updatedTasks];
-          }
-        } else {
-          const newTask: OperationTask = {
-            ...payload,
-            id: `task-${Date.now()}`,
-            createdAt: new Date().toISOString(),
-          };
-          updatedTasks = [...updatedTasks, newTask];
-        }
-      }
-    } catch {
-      if (editingId) {
-        updatedTasks = updatedTasks.map((t) =>
-          t.id === editingId ? { ...t, ...payload } : t
-        );
-      } else {
-        const newTask: OperationTask = {
-          ...payload,
-          id: `task-${Date.now()}`,
-          createdAt: new Date().toISOString(),
-        };
-        updatedTasks = [...updatedTasks, newTask];
-      }
-    }
+      let finalTaskId = form.taskId.trim().toUpperCase();
 
-    persistTasks(updatedTasks);
-    setSaving(false);
-    setShowModal(false);
-    setFeedbackMsg({
-      type: "success",
-      text: editingId
-        ? `Task ${finalTaskId} updated successfully.`
-        : `Task ${finalTaskId} created and assigned to ${payload.employee}!`,
-    });
+      if (!finalTaskId) {
+        finalTaskId = getNextTaskId(tasks);
+      } else if (!finalTaskId.startsWith("PD-")) {
+        finalTaskId = `PD-${finalTaskId}`;
+      }
+
+      const payload = {
+        ...form,
+        taskId: finalTaskId,
+        employee: currentSession.isAdmin
+          ? form.employee
+          : currentSession.name,
+        others: "",
+      };
+
+      const isEditing = Boolean(editingId);
+
+      const res = await fetch(
+        isEditing
+          ? `${API_BASE}/operations/${editingId}`
+          : `${API_BASE}/operations`,
+        {
+          method: isEditing ? "PUT" : "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      const resData = await res.json().catch(() => ({}));
+
+      if (!res.ok || !resData.success || !resData.task) {
+        throw new Error(
+          resData.message ||
+            `Unable to ${isEditing ? "update" : "create"} task.`
+        );
+      }
+
+      // Refresh the task list from PostgreSQL.
+      await loadTasks();
+
+      setShowModal(false);
+      setFeedbackMsg({
+        type: "success",
+        text: isEditing
+          ? `Task ${finalTaskId} updated successfully.`
+          : `Task ${finalTaskId} created and assigned to ${payload.employee}!`,
+      });
+    } catch (error) {
+      console.error("Task save error:", error);
+      setFeedbackMsg({
+        type: "error",
+        text:
+          error instanceof Error
+            ? error.message
+            : "Unable to save task to the database.",
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   // Delete Task
@@ -938,69 +1009,434 @@ const handleLogout = () => {
       return;
     }
 
-    try {
-      await fetch(`${API_BASE}/operations/${task.id}`, { method: "DELETE" });
-    } catch {
-      // ignore
+    const token = getAuthToken();
+
+    if (!token) {
+      setFeedbackMsg({
+        type: "error",
+        text: "Your login session has expired. Please log in again.",
+      });
+      return;
     }
 
-    const filtered = tasks.filter((t) => t.id !== task.id);
-    persistTasks(filtered);
-    if (viewingTask?.id === task.id) {
-      setViewingTask(null);
+    try {
+      const res = await fetch(`${API_BASE}/operations/${task.id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const resData = await res.json().catch(() => ({}));
+
+      if (!res.ok || !resData.success) {
+        throw new Error(resData.message || "Unable to delete task.");
+      }
+
+      // Update the screen only after the database confirms deletion.
+      setTasks((current) =>
+        current.filter((item) => item.id !== task.id)
+      );
+
+      if (viewingTask?.id === task.id) {
+        setViewingTask(null);
+      }
+
+      setFeedbackMsg({
+        type: "success",
+        text: `Task ${task.taskId} deleted.`,
+      });
+    } catch (error) {
+      console.error("Task deletion error:", error);
+      setFeedbackMsg({
+        type: "error",
+        text:
+          error instanceof Error
+            ? error.message
+            : "Unable to delete task from the database.",
+      });
     }
-    setFeedbackMsg({
-      type: "success",
-      text: `Task ${task.taskId} deleted.`,
-    });
   };
 
   // Quick Status Change directly from dropdown
-  const handleStatusChange = async (task: OperationTask, newStatus: TaskStatus) => {
-    const updated = tasks.map((t) =>
-      t.id === task.id ? { ...t, status: newStatus } : t
-    );
-    persistTasks(updated);
+  const handleStatusChange = async (
+    task: OperationTask,
+    newStatus: TaskStatus
+  ) => {
+    const token = getAuthToken();
+
+    if (!token) {
+      setFeedbackMsg({
+        type: "error",
+        text: "Your login session has expired. Please log in again.",
+      });
+      return;
+    }
 
     try {
-      await fetch(`${API_BASE}/operations/${task.id}/status`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
+      const res = await fetch(
+        `${API_BASE}/operations/${task.id}/status`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ status: newStatus }),
+        }
+      );
+
+      const resData = await res.json().catch(() => ({}));
+
+      if (!res.ok || !resData.success) {
+        throw new Error(
+          resData.message || "Unable to update task status."
+        );
+      }
+
+      // Update the screen only after the database confirms the change.
+      setTasks((current) =>
+        current.map((item) =>
+          item.id === task.id
+            ? { ...item, status: newStatus }
+            : item
+        )
+      );
+
+      setFeedbackMsg({
+        type: "success",
+        text: `Task ${task.taskId} status updated to ${newStatus}.`,
       });
-    } catch {
-      // ignore
+    } catch (error) {
+      console.error("Task status update error:", error);
+      setFeedbackMsg({
+        type: "error",
+        text:
+          error instanceof Error
+            ? error.message
+            : "Unable to update task status in the database.",
+      });
     }
   };
 
+
   // Add Employee Handler
-  const handleAddEmployee = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newEmpName.trim()) {
-      alert("Please enter employee name.");
-      return;
+ 
+// Add Employee Handler - Save to PostgreSQL
+
+const handleAddEmployee = async (e: React.FormEvent) => {
+  e.preventDefault();
+
+  if (!newEmpName.trim()) {
+    alert("Please enter employee name.");
+    return;
+  }
+
+  const token = getAuthToken();
+
+  if (!token) {
+    setFeedbackMsg({
+      type: "error",
+      text: "Your session has expired. Please log in again.",
+    });
+    return;
+  }
+
+  const cleanName =
+    newEmpName.trim().charAt(0).toUpperCase() +
+    newEmpName.trim().slice(1);
+
+  const employeeData = {
+    full_name: cleanName,
+    email:
+      newEmpEmail.trim() ||
+      `${cleanName.toLowerCase().replace(/\s+/g, ".")}@payaldecor.com`,
+    phone: newEmpPhone.trim(),
+    designation: newEmpRole.trim(),
+    department: newEmpDept.trim(),
+    status: "Active",
+  };
+
+  try {
+    const response = await fetch(`${API_BASE}/employees`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(employeeData),
+    });
+
+    const data = await response.json();
+
+    if (
+      !response.ok ||
+      !data.success ||
+      !data.employee ||
+      !data.loginCredentials?.temporaryPassword
+    ) {
+      throw new Error(
+        data.message || "Unable to create employee login account."
+      );
     }
-    const cleanName = newEmpName.trim().charAt(0).toUpperCase() + newEmpName.trim().slice(1);
-    const newEmp: Employee = {
-      id: `emp-${Date.now()}`,
-      name: cleanName,
-      role: newEmpRole.trim(),
-      department: newEmpDept.trim(),
-      email: newEmpEmail.trim() || `${cleanName.toLowerCase()}@payaldecor.com`,
-      phone: newEmpPhone.trim(),
+
+    const savedEmployee = data.employee;
+
+    const newEmployee: Employee = {
+      id: String(savedEmployee.id),
+      name: savedEmployee.full_name,
+      email: savedEmployee.email || "",
+      role: savedEmployee.designation || "",
+      department: savedEmployee.department || "",
+      phone: savedEmployee.phone || "",
+      status:
+        savedEmployee.status === "Inactive" ? "Inactive" : "Active",
       avatarColor: "bg-indigo-100 text-indigo-700 border-indigo-200",
     };
 
-    persistEmployees([...employees, newEmp]);
+    setEmployees((previous) => [...previous, newEmployee]);
+
+    // Keep temporary credentials in React memory only.
+    setEmployeeCredentials({
+      name: newEmployee.name,
+      email: data.loginCredentials.email,
+      temporaryPassword: data.loginCredentials.temporaryPassword,
+    });
+
     setNewEmpName("");
     setNewEmpEmail("");
     setNewEmpPhone("");
+    setNewEmpRole("");
+    setNewEmpDept("");
+
     setFeedbackMsg({
       type: "success",
-      text: `Employee "${newEmp.name}" registered. They can now log in via email "${newEmp.email}" to see their personal tasks!`,
+      text: `Employee "${newEmployee.name}" and login account created successfully.`,
     });
-    setShowEmployeeModal(false);
-  };
+
+    setShowAddEmployeeFormModal(false);
+  } catch (error) {
+    console.error("Employee creation failed:", error);
+
+    setFeedbackMsg({
+      type: "error",
+      text:
+        error instanceof Error
+          ? error.message
+          : "Unable to save employee.",
+    });
+  }
+};
+
+// Open Edit Employee Modal
+const handleOpenEditEmployee = (emp: Employee) => {
+  setEditingEmployee(emp);
+  setEditEmpName(emp.name);
+  setEditEmpRole(emp.role);
+  setEditEmpDept(emp.department);
+  setEditEmpEmail(emp.email);
+  setEditEmpPhone(emp.phone || "");
+  setShowEditEmployeeModal(true);
+};
+// Save edited employee to PostgreSQL
+const handleUpdateEmployee = async (e: React.FormEvent) => {
+  e.preventDefault();
+
+  if (!editingEmployee) return;
+
+  if (!editEmpName.trim()) {
+    alert("Please enter employee name.");
+    return;
+  }
+
+  const token = getAuthToken();
+
+  if (!token) {
+    setFeedbackMsg({
+      type: "error",
+      text: "Your session has expired. Please log in again.",
+    });
+    return;
+  }
+
+ const employeeData = {
+  full_name: editEmpName.trim(),
+  email: editEmpEmail.trim(),
+  phone: editEmpPhone.trim(),
+  designation: editEmpRole.trim(),
+  department: editEmpDept.trim(),
+  status: editingEmployee.status || "Active",
+};
+
+  try {
+    const response = await fetch(
+      `${API_BASE}/employees/${editingEmployee.id}`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(employeeData),
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success || !data.employee) {
+      throw new Error(data.message || "Unable to update employee.");
+    }
+
+    const saved = data.employee;
+
+    setEmployees((previous) =>
+      previous.map((emp) =>
+        emp.id === String(saved.id)
+         ? {
+    ...emp,
+    name: saved.full_name,
+    email: saved.email || "",
+    phone: saved.phone || "",
+    role: saved.designation || "",
+    department: saved.department || "",
+    status: saved.status === "Inactive" ? "Inactive" : "Active",
+  }
+          : emp
+      )
+    );
+
+    setShowEditEmployeeModal(false);
+    setEditingEmployee(null);
+
+    setFeedbackMsg({
+      type: "success",
+      text: `Employee "${saved.full_name}" updated successfully in PostgreSQL.`,
+    });
+  } catch (error) {
+    console.error("Employee update failed:", error);
+
+    setFeedbackMsg({
+      type: "error",
+      text:
+        error instanceof Error
+          ? error.message
+          : "Unable to update employee.",
+    });
+  }
+};
+
+// Deactivate employee in PostgreSQL
+const handleDeactivateEmployee = async (emp: Employee) => {
+  if (!window.confirm(`Are you sure you want to deactivate ${emp.name}?`)) {
+    return;
+  }
+
+  const token = getAuthToken();
+
+  if (!token) {
+    setFeedbackMsg({
+      type: "error",
+      text: "Your session has expired. Please log in again.",
+    });
+    return;
+  }
+
+  try {
+    const response = await fetch(`${API_BASE}/employees/${emp.id}`, {
+      method: "DELETE",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || "Unable to deactivate employee.");
+    }
+
+    setEmployees((previous) =>
+      previous.map((item) =>
+        item.id === emp.id ? { ...item, status: "Inactive" } : item
+      )
+    );
+
+    setFeedbackMsg({
+      type: "success",
+      text: `${emp.name} has been deactivated successfully.`,
+    });
+  } catch (error) {
+    console.error("Employee deactivation failed:", error);
+    setFeedbackMsg({
+      type: "error",
+      text:
+        error instanceof Error
+          ? error.message
+          : "Unable to deactivate employee.",
+    });
+  }
+};
+
+// Reactivate employee in PostgreSQL
+const handleReactivateEmployee = async (emp: Employee) => {
+  const token = getAuthToken();
+
+  if (!token) {
+    setFeedbackMsg({
+      type: "error",
+      text: "Your session has expired. Please log in again.",
+    });
+    return;
+  }
+
+  try {
+    const response = await fetch(`${API_BASE}/employees/${emp.id}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        full_name: emp.name,
+        email: emp.email,
+        phone: emp.phone || "",
+        designation: emp.role,
+        department: emp.department,
+        status: "Active",
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || "Unable to reactivate employee.");
+    }
+
+    setEmployees((previous) =>
+      previous.map((item) =>
+        item.id === emp.id ? { ...item, status: "Active" } : item
+      )
+    );
+
+    setFeedbackMsg({
+      type: "success",
+      text: `${emp.name} has been reactivated successfully.`,
+    });
+  } catch (error) {
+    console.error("Employee reactivation failed:", error);
+    setFeedbackMsg({
+      type: "error",
+      text:
+        error instanceof Error
+          ? error.message
+          : "Unable to reactivate employee.",
+    });
+  }
+};
 
   // Export CSV (Exports currently isolated and filtered tasks)
   const handleExportCSV = () => {
@@ -1135,7 +1571,12 @@ const handleLogout = () => {
 
     const idIdx = findIndex(["id"]);
     const wsIdx = findIndex(["workstream"]);
-    const actIdx = findIndex(["task", "activity"]);
+    const actIdx = headerRow.findIndex(
+  (h) =>
+    h.includes("task / activity") ||
+    h === "task activity" ||
+    h === "activity"
+);
     const priIdx = findIndex(["priority"]);
     const empIdx = findIndex(["employee", "assignee", "owner"]);
     const prIdx = findIndex(["primary", "responsible"]);
@@ -1215,46 +1656,193 @@ const handleLogout = () => {
   };
 
   // Execute Import
-  const handleExecuteImport = () => {
+  
+  // Execute Import - Save tasks to PostgreSQL
+  const handleExecuteImport = async () => {
     if (!importText.trim()) {
       setImportError("Please upload or paste CSV data first.");
       return;
     }
-    const parsed = parseCSVString(importText);
-    if (parsed.length === 0) {
-      setImportError("Could not parse any valid tasks. Check formatting and headers.");
+
+    if (importMode === "replace") {
+      setImportError(
+        "Replace All is temporarily disabled to protect existing database tasks. Please select Append Tasks."
+      );
       return;
     }
 
-    let nextTasks: OperationTask[];
-    if (importMode === "replace") {
-      nextTasks = parsed;
-    } else {
-      const existingIds = new Set(tasks.map((t) => t.taskId));
-      const adjusted = parsed.map((t) => {
-        if (existingIds.has(t.taskId)) {
-          const newId = getNextTaskId([...tasks, ...nextTasks || []]);
-          return { ...t, taskId: newId };
-        }
-        return t;
-      });
-      nextTasks = [...tasks, ...adjusted];
+    const parsed = parseCSVString(importText);
+
+    if (parsed.length === 0) {
+      setImportError(
+        "Could not parse any valid tasks. Check formatting and headers."
+      );
+      return;
     }
 
-    persistTasks(nextTasks);
-    setShowImportModal(false);
-    setImportText("");
-    setImportParsedCount(null);
-    setFeedbackMsg({
-      type: "success",
-      text: `Successfully imported ${parsed.length} tasks (${importMode === "replace" ? "Replaced all" : "Appended"}).`,
-    });
+    const token = getAuthToken();
+
+    if (!token) {
+      setImportError("Your login session has expired. Please log in again.");
+      return;
+    }
+
+    // Prepare unique Task IDs without changing existing database tasks.
+    const usedIds = new Set(tasks.map((task) => task.taskId));
+    const prepared: OperationTask[] = [];
+
+    for (const task of parsed) {
+      let finalTaskId = task.taskId.trim().toUpperCase();
+
+      if (usedIds.has(finalTaskId)) {
+        finalTaskId = getNextTaskId([
+          ...tasks,
+          ...prepared,
+        ]);
+      }
+
+      usedIds.add(finalTaskId);
+      prepared.push({
+        ...task,
+        taskId: finalTaskId,
+      });
+    }
+
+    setSaving(true);
+    setImportError(null);
+    setFeedbackMsg(null);
+
+    let importedCount = 0;
+    let failedTaskId = "";
+    let failureMessage = "";
+
+    try {
+      for (const task of prepared) {
+        const payload = {
+          taskId: task.taskId,
+          workstream: task.workstream,
+          taskActivity: task.taskActivity,
+          priority: task.priority,
+          primaryResponsible: task.primaryResponsible,
+          supportingRole: task.supportingRole,
+          expectedDeliverable: task.expectedDeliverable,
+          targetDate: task.targetDate || null,
+          status: task.status,
+          remarks: task.remarks,
+          others: task.others,
+          employee: task.employee,
+        };
+
+        const response = await fetch(`${API_BASE}/operations`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(payload),
+        });
+
+        const responseData = await response.json().catch(() => ({}));
+
+        if (!response.ok || !responseData.success || !responseData.task) {
+          failedTaskId = task.taskId;
+          failureMessage =
+            responseData.message || `Unable to import ${task.taskId}.`;
+          break;
+        }
+
+        importedCount++;
+      }
+
+      if (importedCount > 0) {
+        await loadTasks();
+
+        // Clear imported CSV to prevent accidental duplicate imports.
+        setShowImportModal(false);
+        setImportText("");
+        setImportParsedCount(null);
+      }
+
+      if (importedCount === prepared.length) {
+        setFeedbackMsg({
+          type: "success",
+          text: `Successfully imported ${importedCount} tasks into PostgreSQL.`,
+        });
+      } else {
+        setFeedbackMsg({
+          type: "error",
+          text: `Imported ${importedCount} of ${prepared.length} tasks. Failed at ${failedTaskId}: ${failureMessage}`,
+        });
+      }
+    } catch (error) {
+      console.error("CSV database import error:", error);
+
+      setFeedbackMsg({
+        type: "error",
+        text:
+          error instanceof Error
+            ? `Import error: ${error.message}`
+            : "An unexpected error occurred during CSV import.",
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const inputClass =
-    "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-colors";
 
-  return (
+ const inputClass =
+  "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-colors";
+
+// Employee Management: search and department filtering
+const filteredEmployees = employees.filter((emp) => {
+  const searchText = employeeSearch.trim().toLowerCase();
+
+  const matchesSearch =
+    !searchText ||
+    emp.name.toLowerCase().includes(searchText) ||
+    emp.email.toLowerCase().includes(searchText) ||
+    emp.role.toLowerCase().includes(searchText) ||
+    emp.department.toLowerCase().includes(searchText);
+
+  const matchesDepartment =
+    employeeDepartmentFilter === "All Departments" ||
+    emp.department === employeeDepartmentFilter;
+
+  return matchesSearch && matchesDepartment;
+});
+// Employee Summary Calculations
+
+const totalEmployees = employees.length;
+
+const activeEmployees = employees.filter(
+  (emp) => emp.status?.toLowerCase() === "active" || !emp.status
+).length;
+
+const departmentCounts = employees.reduce<Record<string, number>>(
+  (counts, emp) => {
+    const department = emp.department?.trim() || "Unassigned";
+    counts[department] = (counts[department] || 0) + 1;
+    return counts;
+  },
+  {}
+);
+
+const totalDepartments = Object.keys(departmentCounts).length;
+
+
+// Employee Directory Pagination
+const totalEmployeePages = Math.max(
+  1,
+  Math.ceil(filteredEmployees.length / employeesPerPage)
+);
+
+const safeEmployeePage = Math.min(employeePage, totalEmployeePages);
+
+const paginatedEmployees = filteredEmployees.slice(
+  (safeEmployeePage - 1) * employeesPerPage,
+  safeEmployeePage * employeesPerPage
+);
+return (
     <AppShell title="Operations">
       <div className="space-y-4 p-4 md:p-6">
         {/* ============================================================ */}
@@ -1266,7 +1854,7 @@ const handleLogout = () => {
               <span className="rounded-md bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">
                 Daily Execution & Tracker
               </span>
-              <span className="text-xs text-gray-400">•</span>
+              <span className="text-xs text-gray-400">â€¢</span>
               <span className="text-xs text-gray-500">
                 Payal Decor Modular Furniture
               </span>
@@ -1321,12 +1909,16 @@ const handleLogout = () => {
             {/* 4. Add Employee */}
             <button
               type="button"
-              onClick={() => setShowEmployeeModal(true)}
-              title="Register new team member"
+             onClick={() => {
+  setEmployeeSearch("");
+  setEmployeeDepartmentFilter("All Departments");
+  setShowEmployeeModal(true);
+}}
+              title="Manage employees"
               className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-purple-300 bg-purple-50/70 px-3 py-2 text-xs font-semibold text-purple-700 shadow-2xs hover:bg-purple-100 whitespace-nowrap transition-colors"
             >
               <UserPlus className="h-3.5 w-3.5 text-purple-600" />
-              Add Employee
+             Employee Management
             </button>
 
             {/* 5. Employee Login (ONLY visible when logged in as Admin) */}
@@ -1376,17 +1968,17 @@ const handleLogout = () => {
                   {currentSession.name} ({currentSession.email})
                 </span>
                 <span className="text-xs text-purple-700 font-medium">
-                  • {currentSession.role}
+                  â€¢ {currentSession.role}
                 </span>
               </div>
               <p className="text-xs text-purple-900/80 mt-0.5">
                 {currentSession.isAdmin ? (
                   <span className="font-semibold text-blue-800">
-                    🛡️ Administrator Access: Full organization view across all team tasks.
+                    ðŸ›¡ï¸ Administrator Access: Full organization view across all team tasks.
                   </span>
                 ) : (
                   <span>
-                    🔒 <strong>Strict Task Privacy Active:</strong> Logged in as <strong>{currentSession.name}</strong>. Only tasks assigned to {currentSession.name} are visible in this workspace.
+                    ðŸ”’ <strong>Strict Task Privacy Active:</strong> Logged in as <strong>{currentSession.name}</strong>. Only tasks assigned to {currentSession.name} are visible in this workspace.
                   </span>
                 )}
               </p>
@@ -1639,232 +2231,136 @@ const handleLogout = () => {
               </div>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1350px] text-left text-sm">
-                <thead className="border-b border-gray-200 bg-gray-50/80 text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                  <tr>
-                    {/* 1. Task ID */}
-                    <th scope="col" className="p-3.5 w-28">
-                      Task ID
-                    </th>
-                    {/* 2. Workstream */}
-                    <th scope="col" className="p-3.5 w-44">
-                      Workstream
-                    </th>
-                    {/* 3. Task / Activity */}
-                    <th scope="col" className="p-3.5 min-w-[240px]">
-                      Task / Activity
-                    </th>
-                    {/* 4. Priority */}
-                    <th scope="col" className="p-3.5 w-28">
-                      Priority
-                    </th>
-                    {/* 5. EMPLOYEE COLUMN AFTER PRIORITY */}
-                    <th scope="col" className="p-3.5 w-36">
-                      Employee
-                    </th>
-                    {/* 6. Primary Responsible Person */}
-                    <th scope="col" className="p-3.5 w-44">
-                      Primary Responsible Person
-                    </th>
-                    {/* 7. Supporting Role */}
-                    <th scope="col" className="p-3.5 w-40">
-                      Supporting Role
-                    </th>
-                    {/* 8. Expected Deliverable */}
-                    <th scope="col" className="p-3.5 min-w-[220px]">
-                      Expected Deliverable
-                    </th>
-                    {/* 9. Target Date */}
-                    <th scope="col" className="p-3.5 w-32">
-                      Target Date
-                    </th>
-                    {/* 10. Status */}
-                    <th scope="col" className="p-3.5 w-36">
-                      Status
-                    </th>
-                    {/* 11. Remarks / Blockers */}
-                    <th scope="col" className="p-3.5 min-w-[200px]">
-                      Remarks / Blockers
-                    </th>
-                    {/* 12. Others */}
-                    <th scope="col" className="p-3.5 w-24">
-                      Others
-                    </th>
-                    {/* Actions */}
-                    <th scope="col" className="p-3.5 w-24 text-center">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {filteredTasks.map((task) => {
-                    const isBlocked = task.status === "Blocked";
-                    const isOnHold = task.status === "On Hold";
-                    return (
-                      <tr
-                        key={task.id}
-                        className={`transition-colors hover:bg-blue-50/40 ${
-                          isBlocked
-                            ? "bg-rose-50/20"
-                            : isOnHold
-                            ? "bg-amber-50/20"
-                            : ""
-                        }`}
-                      >
-                        {/* 1. Task ID (PD-001 format) */}
-                        <td className="p-3.5 align-top font-mono text-xs font-bold text-slate-800">
-                          <span className="rounded bg-slate-100 px-2 py-1 border border-slate-200">
-                            {task.taskId}
-                          </span>
-                        </td>
+           
 
-                        {/* 2. Workstream */}
-                        <td className="p-3.5 align-top">
-                          <span
-                            className={`inline-block rounded-md border px-2 py-0.5 text-xs font-medium ${getWorkstreamBadgeColor(
-                              task.workstream
-                            )}`}
-                          >
-                            {task.workstream}
-                          </span>
-                        </td>
+<div className="overflow-x-auto">
+  <table className="w-full min-w-[1050px] text-left">
+    <thead className="bg-gray-50">
+      <tr className="border-b border-gray-200">
+        <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+          Employee
+        </th>
+        <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+          Designation
+        </th>
+        <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+          Department
+        </th>
+        <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+          Assigned Tasks
+        </th>
+        <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+          Status
+        </th>
+        <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">
+          Actions
+        </th>
+      </tr>
+    </thead>
 
-                        {/* 3. Task / Activity */}
-                        <td className="p-3.5 align-top">
-                          <p className="font-medium text-gray-900 leading-snug">
-                            {task.taskActivity}
-                          </p>
-                        </td>
+    <tbody className="divide-y divide-gray-100">
+      {filteredEmployees.map((emp) => {
+        const assignedCount = tasks.filter(
+          (t) =>
+            (t.employee || "").toLowerCase() === emp.name.toLowerCase()
+        ).length;
 
-                        {/* 4. Priority */}
-                        <td className="p-3.5 align-top">
-                          {getPriorityBadge(task.priority)}
-                        </td>
+        return (
+          <tr key={emp.id} className="transition hover:bg-purple-50/40">
+            <td className="px-4 py-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-purple-200 bg-purple-100 text-sm font-bold text-purple-800">
+                  {emp.name.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">
+                    {emp.name}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {emp.email || "No work email"}
+                  </p>
+                </div>
+              </div>
+            </td>
 
-                        {/* 5. EMPLOYEE COLUMN AFTER PRIORITY */}
-                        <td className="p-3.5 align-top">
-                          <div className="flex items-center gap-1.5">
-                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-bold text-slate-700 border border-slate-200">
-                              {task.employee.charAt(0).toUpperCase()}
-                            </span>
-                            <span className="font-semibold text-xs text-gray-800">
-                              {task.employee}
-                            </span>
-                          </div>
-                        </td>
+            <td className="px-4 py-3 text-sm text-gray-700">
+              {emp.role || "â€”"}
+            </td>
 
-                        {/* 6. Primary Responsible Person */}
-                        <td className="p-3.5 align-top font-medium text-gray-800 text-xs">
-                          {task.primaryResponsible}
-                        </td>
+            <td className="px-4 py-3">
+              <span className="inline-flex rounded-full border border-purple-100 bg-purple-50 px-2.5 py-1 text-xs font-medium text-purple-700">
+                {emp.department || "â€”"}
+              </span>
+            </td>
 
-                        {/* 7. Supporting Role */}
-                        <td className="p-3.5 align-top text-gray-600 text-xs">
-                          {task.supportingRole || <span className="text-gray-400">—</span>}
-                        </td>
+            <td className="px-4 py-3">
+              <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700">
+                {assignedCount} tasks
+              </span>
+            </td>
 
-                        {/* 8. Expected Deliverable */}
-                        <td className="p-3.5 align-top text-gray-700 text-xs leading-relaxed">
-                          {task.expectedDeliverable || <span className="text-gray-400">—</span>}
-                        </td>
+            <td className="px-4 py-3">
+              <span
+                className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                  emp.status === "Inactive"
+                    ? "border-red-200 bg-red-50 text-red-700"
+                    : "border-green-200 bg-green-50 text-green-700"
+                }`}
+              >
+                {emp.status || "Active"}
+              </span>
+            </td>
 
-                        {/* 9. Target Date */}
-                        <td className="p-3.5 align-top text-xs font-medium text-gray-800 whitespace-nowrap">
-                          <div className="inline-flex items-center gap-1">
-                            <Calendar className="h-3.5 w-3.5 text-gray-400" />
-                            {formatDateDisplay(task.targetDate)}
-                          </div>
-                        </td>
+            <td className="px-4 py-3">
+              <div className="flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleOpenEditEmployee(emp)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 transition hover:bg-blue-100"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  Edit
+                </button>
 
-                        {/* 10. Status */}
-                        <td className="p-3.5 align-top">
-                          <div className="relative inline-block">
-                            <select
-                              aria-label={`Change status for ${task.taskId}`}
-                              value={task.status}
-                              onChange={(e) =>
-                                void handleStatusChange(task, e.target.value as TaskStatus)
-                              }
-                              className="appearance-none rounded-lg border border-gray-200 bg-white py-1 pl-2.5 pr-6 text-xs font-medium text-gray-800 shadow-2xs hover:border-gray-300 focus:border-blue-500 focus:outline-none cursor-pointer"
-                            >
-                              {STATUS_OPTIONS.map((st) => (
-                                <option key={st} value={st}>
-                                  {st}
-                                </option>
-                              ))}
-                            </select>
-                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
-                              <span className="text-[10px] text-gray-400">▼</span>
-                            </div>
-                          </div>
-                        </td>
+                {emp.status === "Inactive" ? (
+                  <button
+                    type="button"
+                    onClick={() => handleReactivateEmployee(emp)}
+                    className="inline-flex items-center rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs font-semibold text-green-700 transition hover:bg-green-100"
+                  >
+                    Reactivate
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleDeactivateEmployee(emp)}
+                    className="inline-flex items-center rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-100"
+                  >
+                    Deactivate
+                  </button>
+                )}
+              </div>
+            </td>
+          </tr>
+        );
+      })}
 
-                        {/* 11. Remarks / Blockers */}
-                        <td className="p-3.5 align-top">
-                          {task.remarks ? (
-                            <div
-                              className={`rounded p-1.5 text-xs leading-relaxed ${
-                                isBlocked
-                                  ? "bg-rose-50 text-rose-800 border border-rose-200"
-                                  : isOnHold
-                                  ? "bg-amber-50 text-amber-800 border border-amber-200"
-                                  : "text-gray-600"
-                              }`}
-                            >
-                              {isBlocked && (
-                                <span className="inline-flex items-center gap-1 font-semibold text-rose-700 mr-1">
-                                  <AlertTriangle className="h-3 w-3 inline text-rose-600" />
-                                  Blocker:
-                                </span>
-                              )}
-                              <span>{task.remarks}</span>
-                            </div>
-                          ) : (
-                            <span className="text-gray-400 text-xs">—</span>
-                          )}
-                        </td>
+      {filteredEmployees.length === 0 && (
+        <tr>
+          <td colSpan={6} className="px-4 py-10 text-center">
+            <p className="text-sm font-semibold text-gray-700">
+              No employees found
+            </p>
+            <p className="mt-1 text-xs text-gray-500">
+              Try another search term or department.
+            </p>
+          </td>
+        </tr>
+      )}
+    </tbody>
+  </table>
+</div>
 
-                        {/* 12. Others */}
-                        <td className="p-3.5 align-top text-gray-300 text-xs">
-                          {task.others || "—"}
-                        </td>
-
-                        {/* Actions */}
-                        <td className="p-3.5 align-top text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            <button
-                              type="button"
-                              title="View details"
-                              onClick={() => setViewingTask(task)}
-                              className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-800 transition-colors"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </button>
-                            <button
-                              type="button"
-                              title="Edit task"
-                              onClick={() => handleOpenEdit(task)}
-                              className="rounded p-1 text-blue-600 hover:bg-blue-50 transition-colors"
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </button>
-                            <button
-                              type="button"
-                              title="Delete task"
-                              onClick={() => void handleDeleteTask(task)}
-                              className="rounded p-1 text-red-600 hover:bg-red-50 transition-colors"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
           )}
         </section>
 
@@ -1940,27 +2436,26 @@ const handleLogout = () => {
                     />
                   </div>
                 ) : (
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      Select Employee Profile <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      value={modalEmployeeId}
-                      onChange={(e) => {
-                        setModalEmployeeId(e.target.value);
-                        setLoginError(null);
-                        setModalPassword("");
-                      }}
-                      className={inputClass}
-                    >
-                      {employees.map((emp) => (
-                        <option key={emp.id} value={emp.name.toLowerCase()}>
-                          {emp.name} — {emp.role} ({emp.email})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
+                
+  <div>
+    <label className="block text-xs font-semibold text-gray-700 mb-1">
+      Employee Login Email <span className="text-red-500">*</span>
+    </label>
+    <input
+      type="email"
+      required
+      value={modalEmployeeId}
+      onChange={(e) => {
+        setModalEmployeeId(e.target.value);
+        setLoginError(null);
+        setModalPassword("");
+      }}
+      placeholder="Enter your registered employee email"
+      autoComplete="username"
+      className={inputClass}
+    />
+  </div>
+)}
 
                 {/* Password input with toggle */}
                 <div>
@@ -2010,7 +2505,88 @@ const handleLogout = () => {
         )}
 
         {/* ============================================================ */}
-        {/* IMPORT TASKS MODAL (JUST SIDE OF EXPORT)                    */}
+{showPasswordChange && (
+  <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4">
+    <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl">
+      <div className="mb-5">
+        <h2 className="text-xl font-bold text-gray-900">
+          Change Temporary Password
+        </h2>
+        <p className="mt-2 text-sm text-gray-600">
+          For security, you must create a new password before accessing your employee dashboard.
+        </p>
+      </div>
+
+      <form onSubmit={handleChangePassword} className="space-y-4">
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">
+            Temporary Password
+          </label>
+          <input
+            type="password"
+            required
+            autoComplete="current-password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            className={inputClass}
+            placeholder="Enter your temporary password"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">
+            New Password
+          </label>
+          <input
+            type="password"
+            required
+            minLength={8}
+            autoComplete="new-password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            className={inputClass}
+            placeholder="Minimum 8 characters"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">
+            Confirm New Password
+          </label>
+          <input
+            type="password"
+            required
+            minLength={8}
+            autoComplete="new-password"
+            value={confirmNewPassword}
+            onChange={(e) => setConfirmNewPassword(e.target.value)}
+            className={inputClass}
+            placeholder="Re-enter your new password"
+          />
+        </div>
+
+        {passwordChangeError && (
+          <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">
+            {passwordChangeError}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          disabled={passwordChangeLoading}
+          className="w-full rounded-md bg-primary px-4 py-3 font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {passwordChangeLoading ? "Updating Password..." : "Change Password"}
+        </button>
+      </form>
+    </div>
+  </div>
+)}
+
+               
+
+
+                {/* IMPORT TASKS MODAL (JUST SIDE OF EXPORT)                    */}
         {/* ============================================================ */}
         {showImportModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 p-4 backdrop-blur-xs overflow-y-auto">
@@ -2166,7 +2742,7 @@ const handleLogout = () => {
         {/* ============================================================ */}
         {showEmployeeModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 p-4 backdrop-blur-xs overflow-y-auto">
-            <div className="relative w-full max-w-xl rounded-2xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95">
+           <div className="relative w-full max-w-6xl rounded-2xl bg-white p-6 shadow-xl max-h-[92vh] overflow-y-auto animate-in fade-in zoom-in-95">
               <div className="flex items-center justify-between border-b pb-4">
                 <div className="flex items-center gap-2">
                   <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-100 text-purple-700">
@@ -2174,10 +2750,10 @@ const handleLogout = () => {
                   </div>
                   <div>
                     <h3 className="text-lg font-bold text-gray-900">
-                      Add Employee & Team Roster
+                    Employee Management
                     </h3>
                     <p className="text-xs text-gray-500 mt-0.5">
-                      Register employees who can log in with their email to view their tasks
+                      Manage employee profiles, departments, designations and assignments
                     </p>
                   </div>
                 </div>
@@ -2191,88 +2767,130 @@ const handleLogout = () => {
                 </button>
               </div>
 
-              <form onSubmit={handleAddEmployee} className="mt-4 space-y-4">
-                <div className="rounded-xl border border-purple-100 bg-purple-50/40 p-4 space-y-3">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-purple-900">
-                    Register New Employee
-                  </h4>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">
-                        Employee Name <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={newEmpName}
-                        onChange={(e) => setNewEmpName(e.target.value)}
-                        placeholder="e.g. Rahul"
-                        className={inputClass}
-                      />
-                    </div>
+            
+              {/* Employee Management Toolbar */}
 
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">
-                        Designation / Role <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={newEmpRole}
-                        onChange={(e) => setNewEmpRole(e.target.value)}
-                        placeholder="e.g. Site Engineer"
-                        className={inputClass}
-                      />
-                    </div>
-                  </div>
+<div className="mt-5 flex flex-col gap-5">
 
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">
-                        Email Address (Used for Login) <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="email"
-                        required
-                        value={newEmpEmail}
-                        onChange={(e) => setNewEmpEmail(e.target.value)}
-                        placeholder="name@payaldecor.com"
-                        className={inputClass}
-                      />
-                    </div>
+  {/* Employee Summary Cards */}
+  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
 
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">
-                        Department
-                      </label>
-                      <select
-                        value={newEmpDept}
-                        onChange={(e) => setNewEmpDept(e.target.value)}
-                        className={inputClass}
-                      >
-                        {WORKSTREAM_OPTIONS.map((ws) => (
-                          <option key={ws} value={ws}>
-                            {ws}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
+    {/* Total Employees */}
+    <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 shadow-sm">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium text-blue-700">
+            Total Employees
+          </p>
+          <h3 className="mt-2 text-2xl font-bold text-blue-900">
+            {totalEmployees}
+          </h3>
+          <p className="mt-1 text-xs text-blue-600">
+            All registered team members
+          </p>
+        </div>
+        <div className="rounded-lg bg-blue-100 p-3">
+          <Users size={23} className="text-blue-600" />
+        </div>
+      </div>
+    </div>
 
-                  <div className="flex justify-end">
-                    <button
-                      type="submit"
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-purple-700 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-purple-800"
-                    >
-                      <UserPlus className="h-4 w-4" />
-                      Add Employee
-                    </button>
-                  </div>
-                </div>
-              </form>
+    {/* Active Employees */}
+    <div className="rounded-xl border border-green-100 bg-green-50 p-4 shadow-sm">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium text-green-700">
+            Active Employees
+          </p>
+          <h3 className="mt-2 text-2xl font-bold text-green-900">
+            {activeEmployees}
+          </h3>
+          <p className="mt-1 text-xs text-green-600">
+            Currently active team members
+          </p>
+        </div>
+        <div className="rounded-lg bg-green-100 p-3">
+          <UserCheck size={23} className="text-green-600" />
+        </div>
+      </div>
+    </div>
+
+    {/* Departments */}
+    <div className="rounded-xl border border-purple-100 bg-purple-50 p-4 shadow-sm">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium text-purple-700">
+            Departments
+          </p>
+          <h3 className="mt-2 text-2xl font-bold text-purple-900">
+            {totalDepartments}
+          </h3>
+          <p className="mt-1 text-xs text-purple-600">
+            Departments with employees
+          </p>
+        </div>
+        <div className="rounded-lg bg-purple-100 p-3">
+          <Building2 size={23} className="text-purple-600" />
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  {/* Employee Directory Toolbar */}
+  <div className="flex flex-col gap-4">
+
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h4 className="text-sm font-bold text-gray-800">
+          Employee Directory
+        </h4>
+        <p className="mt-1 text-xs text-gray-500">
+          Search and manage your team members
+        </p>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => setShowAddEmployeeFormModal(true)}
+        className="inline-flex items-center justify-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-purple-700"
+      >
+        <UserPlus size={16} />
+        Add Employee
+      </button>
+    </div>
+
+    {/* Search and Department Filter */}
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+      <input
+        type="text"
+        value={employeeSearch}
+        onChange={(e) => setEmployeeSearch(e.target.value)}
+        placeholder="Search by name, email, role or department..."
+        className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+      />
+
+      <select
+        value={employeeDepartmentFilter}
+        onChange={(e) => setEmployeeDepartmentFilter(e.target.value)}
+        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+      >
+        <option value="All Departments">All Departments</option>
+        {WORKSTREAM_OPTIONS.map((department) => (
+          <option key={department} value={department}>
+            {department}
+          </option>
+        ))}
+      </select>
+    </div>
+
+  </div>
+</div>
+
+           
 
               {/* Configured Team Members */}
-              <div className="mt-5 space-y-3">
+              {/* <div className="mt-5 space-y-3">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700">
                   Configured Active Team Members ({employees.length})
                 </h4>
@@ -2295,12 +2913,24 @@ const handleLogout = () => {
                             <p className="text-[10px] text-gray-500 truncate">{emp.email}</p>
                           </div>
                         </div>
-                        <div className="mt-2 flex items-center justify-between text-[11px]">
-                          <span className="text-gray-500">{emp.role}</span>
-                          <span className="rounded-full bg-purple-50 px-2 py-0.5 text-[10px] font-bold text-purple-700 border border-purple-200">
-                            {assignedCount} tasks
-                          </span>
-                        </div>
+                      <div className="mt-2 flex items-center justify-between text-[11px]">
+  <span className="text-gray-500">{emp.role}</span>
+
+  <span className="rounded-full bg-purple-50 px-2 py-0.5 text-[10px] font-bold text-purple-700 border border-purple-200">
+    {assignedCount} tasks
+  </span>
+</div>
+
+<div className="mt-3 flex justify-end border-t border-gray-100 pt-2">
+  <button
+    type="button"
+    onClick={() => handleOpenEditEmployee(emp)}
+    className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] font-semibold text-blue-700 hover:bg-blue-100"
+  >
+    <Pencil className="h-3 w-3" />
+    Edit
+  </button>
+</div>
                       </div>
                     );
                   })}
@@ -2318,291 +2948,485 @@ const handleLogout = () => {
               </div>
             </div>
           </div>
+        )} */}
+
+{/* Employee Directory Table */}
+
+{/* Employee Directory Table */}
+<div className="mt-5 overflow-hidden rounded-xl border border-gray-200 bg-white">
+  <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-3">
+    <div>
+      <h4 className="text-sm font-bold text-gray-800">
+        Employee Directory
+      </h4>
+      <p className="mt-0.5 text-xs text-gray-500">
+        {filteredEmployees.length} employee(s) found
+      </p>
+    </div>
+  </div>
+
+  <div className="overflow-x-auto">
+    <table className="w-full min-w-[1050px] text-left">
+      <thead className="bg-gray-50">
+        <tr className="border-b border-gray-200">
+          <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Employee
+          </th>
+          <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Designation
+          </th>
+          <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Department
+          </th>
+          <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Assigned Tasks
+          </th>
+          <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Status
+          </th>
+          <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Actions
+          </th>
+        </tr>
+      </thead>
+
+      <tbody className="divide-y divide-gray-100">
+        {filteredEmployees.map((emp) => {
+          const assignedCount = tasks.filter(
+            (t) =>
+              (t.employee || "").toLowerCase() === emp.name.toLowerCase()
+          ).length;
+
+          return (
+            <tr key={emp.id} className="transition hover:bg-purple-50/40">
+              <td className="px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-purple-200 bg-purple-100 text-sm font-bold text-purple-800">
+                    {emp.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">
+                      {emp.name}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {emp.email || "No work email"}
+                    </p>
+                  </div>
+                </div>
+              </td>
+
+              <td className="px-4 py-3 text-sm text-gray-700">
+                {emp.role || "â€”"}
+              </td>
+
+              <td className="px-4 py-3">
+                <span className="inline-flex rounded-full border border-purple-100 bg-purple-50 px-2.5 py-1 text-xs font-medium text-purple-700">
+                  {emp.department || "â€”"}
+                </span>
+              </td>
+
+              <td className="px-4 py-3">
+                <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700">
+                  {assignedCount} tasks
+                </span>
+              </td>
+
+              <td className="px-4 py-3">
+                <span
+                  className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                    emp.status === "Inactive"
+                      ? "border-red-200 bg-red-50 text-red-700"
+                      : "border-green-200 bg-green-50 text-green-700"
+                  }`}
+                >
+                  {emp.status || "Active"}
+                </span>
+              </td>
+
+              <td className="px-4 py-3">
+                <div className="flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenEditEmployee(emp)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 transition hover:bg-blue-100"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit
+                  </button>
+
+                  {emp.status === "Inactive" ? (
+                    <button
+                      type="button"
+                      onClick={() => handleReactivateEmployee(emp)}
+                      className="inline-flex items-center rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs font-semibold text-green-700 transition hover:bg-green-100"
+                    >
+                      Reactivate
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleDeactivateEmployee(emp)}
+                      className="inline-flex items-center rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-100"
+                    >
+                      Deactivate
+                    </button>
+                  )}
+                </div>
+              </td>
+            </tr>
+          );
+        })}
+
+        {filteredEmployees.length === 0 && (
+          <tr>
+            <td colSpan={6} className="px-4 py-10 text-center">
+              <p className="text-sm font-semibold text-gray-700">
+                No employees found
+              </p>
+              <p className="mt-1 text-xs text-gray-500">
+                Try another search term or department.
+              </p>
+            </td>
+          </tr>
         )}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+
+<div className="mt-6 flex justify-end border-t pt-3">
+  <button
+    type="button"
+    onClick={() => setShowEmployeeModal(false)}
+    className="rounded-lg bg-gray-900 px-4 py-2 text-xs font-medium text-white hover:bg-gray-800"
+  >
+    Close
+  </button>
+</div>
 
         {/* ============================================================ */}
-        {/* CREATE / EDIT TASK MODAL                                    */}
-        {/* ============================================================ */}
-        {showModal && (
+        
+                  </div>
+            </div>
+          )}
+
+        {/* ADD EMPLOYEE POPUP */}
+        {showAddEmployeeFormModal && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/60 p-4 backdrop-blur-sm">
+            <div className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-gray-200 pb-4">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">
+                    Add Employee
+                  </h3>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Create a new employee profile and assign a department.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowAddEmployeeFormModal(false)}
+                  className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+                >
+                  âœ•
+                </button>
+              </div>
+
+              <form onSubmit={handleAddEmployee} className="mt-5 space-y-4">
+                <div className="rounded-xl border border-purple-100 bg-purple-50/40 p-4">
+                  <h4 className="mb-4 text-xs font-bold uppercase tracking-wider text-purple-900">
+                    Employee Details
+                  </h4>
+
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-gray-700">
+                        Employee Name <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={newEmpName}
+                        onChange={(e) => setNewEmpName(e.target.value)}
+                        placeholder="e.g. Rahul"
+                        className={inputClass}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-gray-700">
+                        Designation / Role <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={newEmpRole}
+                        onChange={(e) => setNewEmpRole(e.target.value)}
+                        placeholder="e.g. Site Engineer"
+                        className={inputClass}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-gray-700">
+                        Work Email <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="email"
+                        required
+                        value={newEmpEmail}
+                        onChange={(e) => setNewEmpEmail(e.target.value)}
+                        placeholder="name@payaldecor.com"
+                        className={inputClass}
+                      />
+                      <p className="mt-1 text-[11px] text-gray-500">
+                        Contact email only. Login access is managed separately.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-gray-700">
+                        Phone Number
+                      </label>
+                      <input
+                        type="tel"
+                        value={newEmpPhone}
+                        onChange={(e) => setNewEmpPhone(e.target.value)}
+                        placeholder="e.g. 9876543210"
+                        className={inputClass}
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="mb-1 block text-xs font-semibold text-gray-700">
+                        Department
+                      </label>
+                      <select
+                        value={newEmpDept}
+                        onChange={(e) => setNewEmpDept(e.target.value)}
+                        className={inputClass}
+                      >
+                        {WORKSTREAM_OPTIONS.map((ws) => (
+                          <option key={ws} value={ws}>
+                            {ws}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 border-t border-gray-200 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddEmployeeFormModal(false)}
+                    className="rounded-lg border border-gray-300 px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="submit"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-purple-700 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-purple-800"
+                  >
+                    <UserPlus className="h-4 w-4" />
+                    Add Employee
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ONE-TIME EMPLOYEE LOGIN CREDENTIALS */}
+        {employeeCredentials && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-gray-900/60 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+              <div className="mb-5 flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-green-100 text-green-700">
+                  <CheckCircle2 className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">
+                    Employee Created Successfully
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    Login credentials generated
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-purple-200 bg-purple-50 p-4">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-purple-800">
+                  Temporary Login Credentials
+                </p>
+
+                <div className="mb-3">
+                  <p className="text-xs text-gray-500">Employee</p>
+                  <p className="font-semibold text-gray-900">
+                    {employeeCredentials.name}
+                  </p>
+                </div>
+
+                <div className="mb-3">
+                  <p className="text-xs text-gray-500">Login Email</p>
+                  <p className="break-all font-medium text-gray-900">
+                    {employeeCredentials.email}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs text-gray-500">Temporary Password</p>
+                  <p className="mt-1 break-all rounded-lg border border-purple-200 bg-white p-3 font-mono text-sm font-bold text-purple-900">
+                    {employeeCredentials.temporaryPassword}
+                  </p>
+                </div>
+              </div>
+
+              <p className="mt-4 text-xs leading-5 text-amber-700">
+                Share these credentials securely with the employee.
+                The employee must change this password on their first login.
+                This temporary password will not be shown again after closing.
+              </p>
+
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(
+                      `Employee: ${employeeCredentials.name}\nEmail: ${employeeCredentials.email}\nTemporary Password: ${employeeCredentials.temporaryPassword}`
+                    );
+                  }}
+                  className="rounded-lg border border-purple-300 px-4 py-2 text-xs font-semibold text-purple-700 hover:bg-purple-50"
+                >
+                  Copy Credentials
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setEmployeeCredentials(null)}
+                  className="rounded-lg bg-purple-700 px-4 py-2 text-xs font-semibold text-white hover:bg-purple-800"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* EDIT EMPLOYEE MODAL */}
+        {showEditEmployeeModal && editingEmployee && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 p-4 backdrop-blur-xs overflow-y-auto">
-            <div className="relative w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95">
+            <div className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between border-b pb-4">
                 <div>
                   <h3 className="text-lg font-bold text-gray-900">
-                    {editingId ? "Edit Operations Task" : "Create Operations Task"}
+                    Edit Employee
                   </h3>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    {editingId
-                      ? `Update daily task parameters for ${form.taskId}`
-                      : "Add a new daily activity to the execution tracker"}
+                  <p className="mt-0.5 text-xs text-gray-500">
+                    Update employee details
                   </p>
                 </div>
+
                 <button
                   type="button"
                   aria-label="Close modal"
-                  onClick={() => setShowModal(false)}
+                  onClick={() => {
+                    setShowEditEmployeeModal(false);
+                    setEditingEmployee(null);
+                  }}
                   className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
                 >
                   <X className="h-5 w-5" />
                 </button>
               </div>
 
-              <form onSubmit={handleSaveTask} className="mt-4 space-y-4">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      Task ID <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={form.taskId}
-                      onChange={(e) =>
-                        setForm((prev) => ({ ...prev, taskId: e.target.value }))
-                      }
-                      placeholder="e.g. PD-048"
-                      className={`${inputClass} font-mono font-bold bg-slate-50`}
-                    />
-                    <p className="mt-0.5 text-[11px] text-gray-400">
-                      Auto format: PD-001, PD-002...
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      Workstream <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      value={form.workstream}
-                      onChange={(e) =>
-                        setForm((prev) => ({ ...prev, workstream: e.target.value }))
-                      }
-                      className={inputClass}
-                    >
-                      {WORKSTREAM_OPTIONS.map((ws) => (
-                        <option key={ws} value={ws}>
-                          {ws}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      Priority <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      value={form.priority}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          priority: e.target.value as PriorityLevel,
-                        }))
-                      }
-                      className={inputClass}
-                    >
-                      {PRIORITY_OPTIONS.map((p) => (
-                        <option key={p} value={p}>
-                          {p}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      Assigned Employee <span className="text-red-500">*</span>
-                    </label>
-                    {currentSession.isAdmin ? (
-                      <select
-                        required
-                        value={form.employee}
-                        onChange={(e) =>
-                          setForm((prev) => ({ ...prev, employee: e.target.value }))
-                        }
-                        className={`${inputClass} font-bold text-purple-900 bg-purple-50/50 border-purple-200`}
-                      >
-                        {employees.map((emp) => (
-                          <option key={emp.id} value={emp.name}>
-                            {emp.name} ({emp.role})
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <div className="rounded-lg border border-purple-200 bg-purple-50/50 px-3 py-2 text-sm font-bold text-purple-900">
-                        {currentSession.name} (Locked to Logged In Account)
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      Primary Responsible Person <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={form.primaryResponsible}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          primaryResponsible: e.target.value,
-                        }))
-                      }
-                      placeholder="e.g. Software Developer"
-                      className={inputClass}
-                    />
-                  </div>
-                </div>
-
+              <form onSubmit={handleUpdateEmployee} className="mt-5 space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    Task / Activity <span className="text-red-500">*</span>
-                  </label>
-                  <textarea
-                    rows={2}
-                    required
-                    value={form.taskActivity}
-                    onChange={(e) =>
-                      setForm((prev) => ({ ...prev, taskActivity: e.target.value }))
-                    }
-                    placeholder="Describe specific task to execute..."
-                    className={inputClass}
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      Supporting Role
-                    </label>
-                    <input
-                      type="text"
-                      value={form.supportingRole}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          supportingRole: e.target.value,
-                        }))
-                      }
-                      placeholder="e.g. Project Manager"
-                      className={inputClass}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      Target Date <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="date"
-                      required
-                      value={form.targetDate}
-                      onChange={(e) =>
-                        setForm((prev) => ({ ...prev, targetDate: e.target.value }))
-                      }
-                      className={inputClass}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    Expected Deliverable
+                  <label className="mb-1 block text-xs font-semibold text-gray-700">
+                    Employee Name *
                   </label>
                   <input
                     type="text"
-                    value={form.expectedDeliverable}
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        expectedDeliverable: e.target.value,
-                      }))
-                    }
-                    placeholder="Deliverable details"
+                    required
+                    value={editEmpName}
+                    onChange={(e) => setEditEmpName(e.target.value)}
                     className={inputClass}
+                    placeholder="Enter employee name"
                   />
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      Status <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      value={form.status}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          status: e.target.value as TaskStatus,
-                        }))
-                      }
-                      className={inputClass}
-                    >
-                      {STATUS_OPTIONS.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      Others (Left blank by default)
-                    </label>
-                    <input
-                      type="text"
-                      value={form.others}
-                      onChange={(e) =>
-                        setForm((prev) => ({ ...prev, others: e.target.value }))
-                      }
-                      placeholder="Leave blank"
-                      className={`${inputClass} bg-gray-50`}
-                    />
-                  </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    Remarks / Blockers
+                  <label className="mb-1 block text-xs font-semibold text-gray-700">
+                    Designation
                   </label>
-                  <textarea
-                    rows={2}
-                    value={form.remarks}
-                    onChange={(e) =>
-                      setForm((prev) => ({ ...prev, remarks: e.target.value }))
-                    }
-                    placeholder="Note any delays or notes..."
+                  <input
+                    type="text"
+                    value={editEmpRole}
+                    onChange={(e) => setEditEmpRole(e.target.value)}
                     className={inputClass}
+                    placeholder="Enter designation"
                   />
                 </div>
 
-                <div className="flex items-center justify-end gap-3 pt-3 border-t">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-gray-700">
+                    Department
+                  </label>
+                  <input
+                    type="text"
+                    value={editEmpDept}
+                    onChange={(e) => setEditEmpDept(e.target.value)}
+                    className={inputClass}
+                    placeholder="Enter department"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-gray-700">
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    value={editEmpEmail}
+                    onChange={(e) => setEditEmpEmail(e.target.value)}
+                    className={inputClass}
+                    placeholder="Enter email address"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-gray-700">
+                    Phone Number
+                  </label>
+                  <input
+                    type="tel"
+                    value={editEmpPhone}
+                    onChange={(e) => setEditEmpPhone(e.target.value)}
+                    className={inputClass}
+                    placeholder="Enter phone number"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 border-t pt-4">
                   <button
                     type="button"
-                    onClick={() => setShowModal(false)}
-                    className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    onClick={() => {
+                      setShowEditEmployeeModal(false);
+                      setEditingEmployee(null);
+                    }}
+                    className="rounded-lg border border-gray-300 px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
                   >
                     Cancel
                   </button>
+
                   <button
                     type="submit"
-                    disabled={saving}
-                    className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
+                    className="rounded-lg bg-purple-700 px-4 py-2 text-xs font-semibold text-white hover:bg-purple-800"
                   >
-                    {saving ? (
-                      <>
-                        <RefreshCw className="h-4 w-4 animate-spin" />
-                        Saving...
-                      </>
-                    ) : editingId ? (
-                      "Update Task"
-                    ) : (
-                      "Create Task"
-                    )}
+                    Save Changes
                   </button>
                 </div>
               </form>
@@ -2611,6 +3435,270 @@ const handleLogout = () => {
         )}
 
         {/* ============================================================ */}
+        {/* CREATE / EDIT TASK MODAL                                    */}
+
+
+        {/* ============================================================ */}
+        {/* CREATE / EDIT TASK MODAL */}
+        {showModal && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/60 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
+              <div className="mb-5 flex items-center justify-between border-b pb-4">
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">
+                    {editingId ? "Edit Task" : "Create New Task"}
+                  </h2>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Enter the task details and assignment information.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
+                  aria-label="Close task form"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveTask} className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-gray-700">
+                      Task ID
+                    </label>
+                    <input
+                      type="text"
+                      value={form.taskId}
+                      onChange={(e) =>
+                        setForm({ ...form, taskId: e.target.value })
+                      }
+                      className={inputClass}
+                      placeholder="PD-001"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-gray-700">
+                      Workstream
+                    </label>
+                    <input
+                      type="text"
+                      value={form.workstream}
+                      onChange={(e) =>
+                        setForm({ ...form, workstream: e.target.value })
+                      }
+                      className={inputClass}
+                      placeholder="Enter workstream"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-gray-700">
+                    Task / Activity *
+                  </label>
+                  <textarea
+                    required
+                    rows={3}
+                    value={form.taskActivity}
+                    onChange={(e) =>
+                      setForm({ ...form, taskActivity: e.target.value })
+                    }
+                    className={inputClass}
+                    placeholder="Describe the task or activity"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-gray-700">
+                      Priority
+                    </label>
+                    <select
+                      value={form.priority}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          priority: e.target.value as PriorityLevel,
+                        })
+                      }
+                      className={inputClass}
+                    >
+                      {(["Critical", "Urgent", "High", "Medium", "Low"] as PriorityLevel[]).map((item) => (
+                        <option key={item} value={item}>{item}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-gray-700">
+                      Assigned Employee *
+                    </label>
+                    {currentSession.isAdmin ? (
+                      <select
+                        value={form.employee}
+                        onChange={(e) =>
+                          setForm({ ...form, employee: e.target.value })
+                        }
+                        className={inputClass}
+                        required
+                      >
+                        {!employees.some((emp) => emp.name === form.employee && emp.status === "Active") && (
+                          <option value={form.employee}>{form.employee}</option>
+                        )}
+                        {employees
+                          .filter((emp) => emp.status === "Active")
+                          .map((emp) => (
+                            <option key={emp.id} value={emp.name}>
+                              {emp.name} ({emp.role})
+                            </option>
+                          ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={currentSession.name}
+                        readOnly
+                        className={`${inputClass} bg-gray-100`}
+                      />
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-gray-700">
+                      Primary Responsible Person *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={form.primaryResponsible}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          primaryResponsible: e.target.value,
+                        })
+                      }
+                      className={inputClass}
+                      placeholder="Enter responsible person"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-gray-700">
+                      Supporting Role
+                    </label>
+                    <input
+                      type="text"
+                      value={form.supportingRole}
+                      onChange={(e) =>
+                        setForm({ ...form, supportingRole: e.target.value })
+                      }
+                      className={inputClass}
+                      placeholder="Enter supporting role"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-gray-700">
+                      Target Date
+                    </label>
+                    <input
+                      type="date"
+                      value={form.targetDate}
+                      onChange={(e) =>
+                        setForm({ ...form, targetDate: e.target.value })
+                      }
+                      className={inputClass}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-gray-700">
+                      Status
+                    </label>
+                    <select
+                      value={form.status}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          status: e.target.value as TaskStatus,
+                        })
+                      }
+                      className={inputClass}
+                    >
+                      {(["Not Started", "In Progress", "Completed", "On Hold", "Blocked", "Pending", "Under Review"] as TaskStatus[]).map((item) => (
+                        <option key={item} value={item}>{item}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-gray-700">
+                    Expected Deliverable
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={form.expectedDeliverable}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        expectedDeliverable: e.target.value,
+                      })
+                    }
+                    className={inputClass}
+                    placeholder="Describe the expected output"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-gray-700">
+                    Remarks
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={form.remarks}
+                    onChange={(e) =>
+                      setForm({ ...form, remarks: e.target.value })
+                    }
+                    className={inputClass}
+                    placeholder="Additional remarks or instructions"
+                  />
+                </div>
+
+                {feedbackMsg?.type === "error" && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {feedbackMsg.text}
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-3 border-t pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowModal(false)}
+                    disabled={saving}
+                    className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="rounded-lg bg-purple-700 px-5 py-2 text-sm font-semibold text-white hover:bg-purple-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {saving
+                      ? "Saving..."
+                      : editingId
+                        ? "Update Task"
+                        : "Create Task"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
         {/* VIEW TASK DETAILS MODAL                                      */}
         {/* ============================================================ */}
         {viewingTask && (
@@ -2681,7 +3769,7 @@ const handleLogout = () => {
                   <div className="rounded-lg border p-3">
                     <span className="text-xs text-gray-500">Supporting Role</span>
                     <p className="mt-1 text-gray-800">
-                      {viewingTask.supportingRole || "—"}
+                      {viewingTask.supportingRole || "â€”"}
                     </p>
                   </div>
                   <div className="rounded-lg border p-3">
@@ -2696,7 +3784,7 @@ const handleLogout = () => {
                   <div className="rounded-lg border p-3">
                     <span className="text-xs text-gray-500">Expected Deliverable</span>
                     <p className="mt-1 text-gray-800">
-                      {viewingTask.expectedDeliverable || "—"}
+                      {viewingTask.expectedDeliverable || "â€”"}
                     </p>
                   </div>
                 </div>
@@ -2715,7 +3803,7 @@ const handleLogout = () => {
                 <div className="rounded-lg border p-3">
                   <span className="text-xs text-gray-500">Others</span>
                   <p className="mt-1 text-gray-400 text-xs italic">
-                    {viewingTask.others || "— (Blank)"}
+                    {viewingTask.others || "â€” (Blank)"}
                   </p>
                 </div>
               </div>
