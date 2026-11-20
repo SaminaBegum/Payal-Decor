@@ -1,0 +1,11 @@
+{
+  "name": "payal-decor",
+  "private": true,
+  "description": "Payal Decor ERP Monorepo",
+  "scripts": {
+    "lint": "npm run lint --prefix backend && npm run lint --prefix modulaflow-erp-main",
+    "test": "npm run test --prefix backend && npm run test --prefix modulaflow-erp-main",
+    "typecheck": "npm run typecheck --prefix modulaflow-erp-main",
+    "build": "npm run build --prefix modulaflow-erp-main"
+  }
+}

@@ -8,3 +8,4 @@ build/
 .output/
 coverage/
 .DS_Store
+.agents/
