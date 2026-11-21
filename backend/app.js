@@ -37,6 +37,20 @@ const authLimiter = rateLimit({
   },
 });
 
+// General rate limiter for all API endpoints
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Too many requests from this IP, please try again after 15 minutes.",
+  },
+});
+
+app.use("/api", apiLimiter);
+
 // Health check endpoint
 app.get("/api/health", (req, res) => {
   res.status(200).json({

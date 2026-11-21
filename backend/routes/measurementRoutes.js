@@ -1,9 +1,24 @@
 const express = require("express");
 const router = express.Router();
+const rateLimit = require("express-rate-limit");
 const pool = require("../config/db");
 
+// Rate limiting for site measurement routes
+const measurementLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Too many requests to site measurements, please try again later.",
+  },
+});
+
+router.use(measurementLimiter);
+
 // GET /api/site-measurements
-router.get("/", async (req, res) => {
+router.get("/", measurementLimiter, async (req, res) => {
   try {
     // Check if table SiteMeasurement exists
     const tableCheck = await pool.query(`

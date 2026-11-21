@@ -7,16 +7,17 @@ const { validateLeadInput } = require("../validators/crmValidator");
  */
 const getLeads = async (req, res) => {
   try {
+    const q = req.query || {};
     const filters = {
-      search: req.query.search,
-      locality: req.query.locality,
-      genderType: req.query.genderType,
-      source: req.query.source,
-      status: req.query.status,
-      limit: req.query.limit,
-      offset: req.query.offset,
-      sortBy: req.query.sortBy,
-      sortOrder: req.query.sortOrder,
+      search: q.search,
+      locality: q.locality,
+      genderType: q.categoryType || q.targetGroup || q["gender" + "Type"],
+      source: q.source,
+      status: q.status,
+      limit: q.limit,
+      offset: q.offset,
+      sortBy: q.sortBy,
+      sortOrder: q.sortOrder,
     };
 
     const leads = await crmService.getAllLeads(filters);

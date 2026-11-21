@@ -1,9 +1,24 @@
 const express = require("express");
 const router = express.Router();
+const rateLimit = require("express-rate-limit");
 const pool = require("../config/db");
 
+// Rate limiting for lead enquiry routes
+const leadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Too many requests to lead enquiries, please try again later.",
+  },
+});
+
+router.use(leadLimiter);
+
 // GET /api/lead-enquiries - Fetch all lead enquiries
-router.get("/", async (req, res) => {
+router.get("/", leadLimiter, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT
@@ -42,7 +57,7 @@ router.get("/", async (req, res) => {
 });
 
 // GET /api/lead-enquiries/:id - Fetch single lead
-router.get("/:id", async (req, res) => {
+router.get("/:id", leadLimiter, async (req, res) => {
   try {
     const { id } = req.params;
     const result = await pool.query(
@@ -73,7 +88,7 @@ router.get("/:id", async (req, res) => {
 });
 
 // POST /api/lead-enquiries - Create a new lead enquiry
-router.post("/", async (req, res) => {
+router.post("/", leadLimiter, async (req, res) => {
   try {
     const {
       customerName,
@@ -147,7 +162,7 @@ router.post("/", async (req, res) => {
 });
 
 // PUT /api/lead-enquiries/:id - Update lead enquiry
-router.put("/:id", async (req, res) => {
+router.put("/:id", leadLimiter, async (req, res) => {
   try {
     const { id } = req.params;
     const {
@@ -223,7 +238,7 @@ router.put("/:id", async (req, res) => {
 });
 
 // DELETE /api/lead-enquiries/:id - Delete lead enquiry
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", leadLimiter, async (req, res) => {
   try {
     const { id } = req.params;
     const result = await pool.query(
