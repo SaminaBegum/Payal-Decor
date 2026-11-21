@@ -13,6 +13,7 @@ const leadRoutes = require("./routes/leadRoutes");
 const measurementRoutes = require("./routes/measurementRoutes");
 const estimateDocRoutes = require("./routes/estimateDocRoutes");
 const quotationRoutes = require("./routes/quotationRoutes");
+const vendorRoutes = require("./routes/vendorRoutes");
 
 const app = express();
 
@@ -97,5 +98,9 @@ app.use("/api/site-measurements", measurementRoutes);
 // Estimate Documents (PDF format print builder)
 app.use("/api/estimate-docs", estimateDocRoutes);
 app.use("/estimate-docs", estimateDocRoutes);
+
+// Vendor routes
+app.use("/api/vendors", vendorRoutes);
+app.use("/vendors", vendorRoutes);
 
 module.exports = app;
