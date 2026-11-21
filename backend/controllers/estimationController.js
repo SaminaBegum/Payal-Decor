@@ -54,7 +54,7 @@ const getEstimationById = async (req, res) => {
       estimation,
     });
   } catch (error) {
-    console.error(`Error in getEstimationById (${req.params.id}):`, error);
+    console.error("Error in getEstimationById (%s):", req.params.id, error);
     return res.status(500).json({
       success: false,
       message: "Failed to fetch estimation details",
@@ -126,7 +126,7 @@ const updateEstimation = async (req, res) => {
       estimation: updated,
     });
   } catch (error) {
-    console.error(`Error in updateEstimation (${req.params.id}):`, error);
+    console.error("Error in updateEstimation (%s):", req.params.id, error);
     return res.status(500).json({
       success: false,
       message: "Failed to update estimation",
@@ -156,7 +156,7 @@ const deleteEstimation = async (req, res) => {
       id: deleted.id,
     });
   } catch (error) {
-    console.error(`Error in deleteEstimation (${req.params.id}):`, error);
+    console.error("Error in deleteEstimation (%s):", req.params.id, error);
     return res.status(500).json({
       success: false,
       message: "Failed to delete estimation",

@@ -113,7 +113,7 @@ const updateEstimateDoc = async (req, res) => {
       data: updated,
     });
   } catch (error) {
-    console.error(`Error in updateEstimateDoc (${req.params.id}):`, error);
+    console.error("Error in updateEstimateDoc (%s):", req.params.id, error);
     return res.status(500).json({
       success: false,
       message: "Failed to update estimate document",
@@ -142,7 +142,7 @@ const deleteEstimateDoc = async (req, res) => {
       message: `Estimate document ${deleted.estimateNo || id} deleted successfully`,
     });
   } catch (error) {
-    console.error(`Error in deleteEstimateDoc (${req.params.id}):`, error);
+    console.error("Error in deleteEstimateDoc (%s):", req.params.id, error);
     return res.status(500).json({
       success: false,
       message: "Failed to delete estimate document",

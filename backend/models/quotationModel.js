@@ -45,7 +45,7 @@ const getNextQuotationNo = async () => {
     return `${prefix}${nextSeq}`;
   } catch (error) {
     console.error("Error generating next quotationNo:", error);
-    return `QT-${year}-${nextYear}/${Math.floor(100 + Math.random() * 900)}`;
+    return `QT-${year}-${nextYear}/${crypto.randomInt(100, 1000)}`;
   }
 };
 

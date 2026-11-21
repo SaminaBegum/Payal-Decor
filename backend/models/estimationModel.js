@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const pool = require("../config/db");
 
 /**
@@ -187,7 +188,7 @@ const createEstimation = async (payload) => {
     const insertedItems = [];
 
     for (const item of items) {
-      const itemId = item.id || `ITEM-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const itemId = item.id || `ITEM-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
       const insertItemQuery = `
         INSERT INTO public.estimation_items (
           id, "estimationId", "itemCode", "itemName", description,
@@ -245,7 +246,7 @@ const createEstimation = async (payload) => {
       const insertedBoqLines = [];
 
       for (const line of boqLines) {
-        const lineId = line.id || `BOQ-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+        const lineId = line.id || `BOQ-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
         const insertBoqQuery = `
           INSERT INTO public.estimation_boq_lines (
             id, "estimationId", "estimationItemId", "materialId",
@@ -366,7 +367,7 @@ const updateEstimation = async (id, payload) => {
       await client.query('DELETE FROM public.estimation_boq_lines WHERE "estimationId" = $1', [id]);
 
       for (const item of payload.items) {
-        const itemId = item.id || `ITEM-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+        const itemId = item.id || `ITEM-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
         await client.query(`
           INSERT INTO public.estimation_items (
             id, "estimationId", "itemCode", "itemName", description,
@@ -393,7 +394,7 @@ const updateEstimation = async (id, payload) => {
 
         if (Array.isArray(item.boqLines)) {
           for (const line of item.boqLines) {
-            const lineId = line.id || `BOQ-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+            const lineId = line.id || `BOQ-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
             await client.query(`
               INSERT INTO public.estimation_boq_lines (
                 id, "estimationId", "estimationItemId", "materialId",

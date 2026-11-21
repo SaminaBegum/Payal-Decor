@@ -99,7 +99,11 @@ async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
     typeof window !== "undefined"
       ? sessionStorage.getItem("payal_decor_auth_token")
       : null;
-  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+  const reqHeaders: Record<string, string> = {
+    ...(options?.body ? { "Content-Type": "application/json" } : {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...((options?.headers as Record<string, string>) || {}),
+  };
 
   const urlsToTry = [`${API_BASE}${cleanPath}`, `/api${cleanPath}`];
 
@@ -109,11 +113,7 @@ async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
     try {
       const response = await fetch(url, {
         ...options,
-        headers: {
-          ...(options?.body ? { "Content-Type": "application/json" } : {}),
-          ...authHeaders,
-          ...options?.headers,
-        },
+        headers: reqHeaders,
       });
 
       const data = await response.json().catch(() => ({}));

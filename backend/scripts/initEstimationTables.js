@@ -1,4 +1,5 @@
 require("dotenv").config({ path: __dirname + "/../.env" });
+const crypto = require("crypto");
 const pool = require("../config/db");
 
 async function initEstimationTables() {
@@ -140,7 +141,7 @@ async function initEstimationTables() {
       ];
 
       for (const item of seedMaterials) {
-        const id = `mat-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+        const id = `mat-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
         await client.query(`
           INSERT INTO public.materials_master (
             id, code, name, category, unit, rate, "defaultWastagePct", "hsnCode"

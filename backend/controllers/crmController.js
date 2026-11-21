@@ -59,7 +59,7 @@ const getLeadById = async (req, res) => {
       lead,
     });
   } catch (error) {
-    console.error(`Error in getLeadById (${req.params.id}):`, error);
+    console.error("Error in getLeadById (%s):", req.params.id, error);
     return res.status(500).json({
       success: false,
       message: "Failed to fetch CRM lead",
@@ -133,7 +133,7 @@ const updateLead = async (req, res) => {
       lead: updatedLead,
     });
   } catch (error) {
-    console.error(`Error in updateLead (${req.params.id}):`, error);
+    console.error("Error in updateLead (%s):", req.params.id, error);
     return res.status(500).json({
       success: false,
       message: "Failed to update CRM lead",
@@ -164,7 +164,7 @@ const deleteLead = async (req, res) => {
       id: deleted.id,
     });
   } catch (error) {
-    console.error(`Error in deleteLead (${req.params.id}):`, error);
+    console.error("Error in deleteLead (%s):", req.params.id, error);
     return res.status(500).json({
       success: false,
       message: "Failed to delete CRM lead",

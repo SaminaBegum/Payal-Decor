@@ -399,7 +399,7 @@ const syncLeads = async (leadsArray = []) => {
   const synced = [];
 
   for (const lead of leadsArray) {
-    const id = lead.id || `crm-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const id = lead.id || `crm-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
     const source = lead.source || "Meta";
     const businessName = lead.businessName ? lead.businessName.trim() : null;
     const category = lead.category ? lead.category.trim() : null;
@@ -481,7 +481,7 @@ const syncLeads = async (leadsArray = []) => {
       const res = await pool.query(query, values);
       if (res.rows[0]) synced.push(res.rows[0]);
     } catch (err) {
-      console.error(`Failed to sync lead ${id}:`, err.message);
+      console.error("Failed to sync lead %s:", id, err.message);
     }
   }
 

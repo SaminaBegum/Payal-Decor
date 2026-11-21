@@ -86,6 +86,7 @@ interface SiteVisit {
   visitId: string;
   customerId?: string | null;
   leadEnquiryId?: number | null;
+  leadId?: string | number | null;
   customerName?: string;
   projectName?: string;
   siteAddress?: string;
@@ -352,7 +353,11 @@ async function apiRequest<T>(
     typeof window !== "undefined"
       ? sessionStorage.getItem("payal_decor_auth_token")
       : null;
-  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+  const reqHeaders: Record<string, string> = {
+    ...(options?.body ? { "Content-Type": "application/json" } : {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...((options?.headers as Record<string, string>) || {}),
+  };
 
   const urlsToTry = [`${API_BASE}${cleanPath}`, `/api${cleanPath}`];
 
@@ -362,11 +367,7 @@ async function apiRequest<T>(
     try {
       const response = await fetch(url, {
         ...options,
-        headers: {
-          ...(options?.body ? { "Content-Type": "application/json" } : {}),
-          ...authHeaders,
-          ...options?.headers,
-        },
+        headers: reqHeaders,
       });
 
       const data = await response.json().catch(() => ({}));
@@ -587,7 +588,7 @@ export function Estimation() {
 
     const unitSqft = areaSqft(L, W);
     const unitSqm = areaSqm(L, W);
-    const unitRft = rft(L, W);
+    const unitRft = rft(L);
 
     const baseSqft = unitSqft * qty;
     const procSqft = procurementQty(baseSqft, wastage);

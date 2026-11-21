@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const pool = require("../config/db");
 
 /**
@@ -42,7 +43,7 @@ const getNextEstimateNo = async () => {
     return `${prefix}${nextSeq}`;
   } catch (error) {
     console.error("Error generating next estimateNo:", error);
-    return `${prefix}${Math.floor(100 + Math.random() * 900)}`;
+    return `${prefix}${crypto.randomInt(100, 1000)}`;
   }
 };
 
@@ -107,7 +108,7 @@ const createEstimateDoc = async (data) => {
     status = "Draft",
   } = data;
 
-  const id = `estdoc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const id = `estdoc_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
   const estimateNo = data.estimateNo || (await getNextEstimateNo());
 
   // Calculate totals
