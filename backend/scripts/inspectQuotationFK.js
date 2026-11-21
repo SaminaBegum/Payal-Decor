@@ -1,0 +1,28 @@
+require("dotenv").config({ path: __dirname + "/../.env" });
+const pool = require("../config/db");
+
+async function run() {
+  try {
+    const fkRes = await pool.query(`
+      SELECT 
+        tc.table_name, 
+        kcu.column_name, 
+        ccu.table_name AS foreign_table_name, 
+        ccu.column_name AS foreign_column_name 
+      FROM information_schema.table_constraints AS tc 
+      JOIN information_schema.key_column_usage AS kcu 
+        ON tc.constraint_name = kcu.constraint_name 
+      JOIN information_schema.constraint_column_usage AS ccu 
+        ON ccu.constraint_name = tc.constraint_name 
+      WHERE tc.constraint_type = 'FOREIGN KEY' 
+        AND tc.table_name IN ('quotations', 'quotation_items');
+    `);
+    console.log("Foreign keys on quotations/quotation_items:", fkRes.rows);
+  } catch (err) {
+    console.error("Error checking FKs:", err.message);
+  } finally {
+    await pool.end();
+  }
+}
+
+run();

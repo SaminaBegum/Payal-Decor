@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/erp/AppShell";
 
 const API_BASE = (
-  import.meta.env.VITE_API_URL || "http://localhost:5001/api"
+  import.meta.env.VITE_API_URL || "http://localhost:5000/api"
 ).replace(/\/+$/, "");
 
 interface CustomerOption {

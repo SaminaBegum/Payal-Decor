@@ -32,8 +32,32 @@ import { AppShell } from "@/components/erp/AppShell";
 import { INITIAL_CRM_RECORDS, type CRMLead } from "@/data/crm-data";
 
 const API_BASE = (
-  import.meta.env["VITE_API_URL"] || "http://localhost:5001/api"
+  import.meta.env["VITE_API_URL"] || "http://localhost:5000/api"
 ).replace(/\/+$/, "");
+
+/**
+ * Resilient API fetcher:
+ * Tries direct API URL (http://localhost:5000/api), and falls back to
+ * relative (/api) to leverage the Vite proxy if direct connection fails.
+ */
+async function apiFetch(endpoint: string, options: RequestInit = {}): Promise<Response> {
+  const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  const directUrl = `${API_BASE}${cleanEndpoint}`;
+  try {
+    const res = await fetch(directUrl, options);
+    return res;
+  } catch (directErr) {
+    if (directUrl.startsWith("http")) {
+      try {
+        const fallbackRes = await fetch(`/api${cleanEndpoint}`, options);
+        return fallbackRes;
+      } catch {
+        throw directErr;
+      }
+    }
+    throw directErr;
+  }
+}
 
 const STORAGE_KEY = "payal_decor_crm_leads_v3";
 
@@ -162,6 +186,7 @@ function CRMPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   // View Details Modal State
   const [viewingLead, setViewingLead] = useState<CRMLead | null>(null);
@@ -220,10 +245,10 @@ function CRMPage() {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed) && parsed.length > 0) {
           const existingNames = new Set(
-            parsed.map((r: CRMLead) => r.businessName.toLowerCase().trim())
+            parsed.map((r: CRMLead) => (r.businessName || "").toLowerCase().trim()).filter(Boolean)
           );
           const missing = INITIAL_CRM_RECORDS.filter(
-            (r) => !existingNames.has(r.businessName.toLowerCase().trim())
+            (r) => !existingNames.has((r.businessName || "").toLowerCase().trim())
           );
           currentData = [...parsed, ...missing].map((item) => ({
             ...item,
@@ -235,9 +260,9 @@ function CRMPage() {
       // ignore
     }
 
-    // 2. Query Central Database API (PostgreSQL / Express at http://localhost:5001)
+    // 2. Query Central Database API (PostgreSQL / Express at http://localhost:5000)
     try {
-      const res = await fetch(`${API_BASE}/crm/leads`, {
+      const res = await apiFetch("/crm/leads", {
         headers: { Accept: "application/json" },
       });
       if (res.ok) {
@@ -251,15 +276,49 @@ function CRMPage() {
           : null;
 
         if (serverLeads && serverLeads.length > 0) {
-          const serverMap = new Map<string, CRMLead>();
-          for (const s of serverLeads) {
-            const key = (s.businessName || "").toLowerCase().trim();
-            if (key) serverMap.set(key, s);
+          const serverIdSet = new Set(serverLeads.map((s: CRMLead) => s.id));
+          // Identify any pending local leads that haven't been saved to PostgreSQL yet
+          const localPending = currentData.filter((c: CRMLead) => !serverIdSet.has(c.id));
+
+          if (localPending.length > 0) {
+            // Automatically sync pending local leads into PostgreSQL
+            try {
+              await apiFetch("/crm/leads/sync", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ leads: localPending }),
+              });
+              // Reload fresh data from PostgreSQL database
+              const freshRes = await apiFetch("/crm/leads");
+              if (freshRes.ok) {
+                const freshData = await freshRes.json();
+                const freshList = freshData.leads || freshData.data || freshData;
+                if (Array.isArray(freshList)) {
+                  currentData = freshList.map((s: CRMLead) => ({
+                    ...s,
+                    businessName: s.businessName || s.id || "Untitled Lead",
+                    source: s.source || "Meta",
+                  }));
+                }
+              }
+            } catch {
+              currentData = [
+                ...localPending,
+                ...serverLeads.map((s: CRMLead) => ({
+                  ...s,
+                  businessName: s.businessName || s.id || "Untitled Lead",
+                  source: s.source || "Meta",
+                })),
+              ];
+            }
+          } else {
+            currentData = serverLeads.map((s: CRMLead) => ({
+              ...s,
+              businessName: s.businessName || s.id || "Untitled Lead",
+              source: s.source || "Meta",
+            }));
           }
-          currentData = currentData.map((l) => {
-            const key = (l.businessName || "").toLowerCase().trim();
-            return serverMap.has(key) ? { ...l, ...serverMap.get(key) } : l;
-          });
+
           setDbStatus("connected");
           setLastSyncTime(new Date().toLocaleTimeString());
         } else {
@@ -286,12 +345,21 @@ function CRMPage() {
   const handleSyncWithDatabase = async () => {
     setDbStatus("syncing");
     try {
-      const res = await fetch(`${API_BASE}/crm/leads/sync`, {
+      const res = await apiFetch("/crm/leads/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ leads }),
       });
       if (res.ok) {
+        // Refresh leads directly from PostgreSQL
+        const refreshRes = await apiFetch("/crm/leads");
+        if (refreshRes.ok) {
+          const freshData = await refreshRes.json();
+          const freshList = freshData.leads || freshData.data || freshData;
+          if (Array.isArray(freshList) && freshList.length > 0) {
+            persistLeads(freshList);
+          }
+        }
         setDbStatus("connected");
         setLastSyncTime(new Date().toLocaleTimeString());
         setFeedbackMsg({
@@ -305,13 +373,13 @@ function CRMPage() {
     }
 
     try {
-      const ping = await fetch(`${API_BASE}/crm/leads`);
+      const ping = await apiFetch("/crm/leads");
       if (ping.ok) {
         setDbStatus("connected");
         setLastSyncTime(new Date().toLocaleTimeString());
         setFeedbackMsg({
           type: "success",
-          text: `Database connected (${API_BASE}). All ${leads.length} property records active and saved!`,
+          text: `Database connected. All ${leads.length} property records active and saved!`,
         });
         return;
       }
@@ -321,8 +389,8 @@ function CRMPage() {
 
     setDbStatus("local");
     setFeedbackMsg({
-      type: "success",
-      text: `All ${leads.length} records safely saved in persistent database storage. (Server at ${API_BASE} is in standby).`,
+      type: "error",
+      text: `Central database (PostgreSQL on port 5000) unreachable. Records safely stored in local cache.`,
     });
   };
 
@@ -356,14 +424,14 @@ function CRMPage() {
       // Search text filter
       if (query) {
         const match =
-          item.businessName.toLowerCase().includes(query) ||
-          item.source.toLowerCase().includes(query) ||
-          item.locality.toLowerCase().includes(query) ||
-          item.primaryPhone.toLowerCase().includes(query) ||
-          item.secondaryEmail.toLowerCase().includes(query) ||
-          item.category.toLowerCase().includes(query) ||
-          item.genderType.toLowerCase().includes(query) ||
-          item.address.toLowerCase().includes(query);
+          (item.businessName || "").toLowerCase().includes(query) ||
+          (item.source || "").toLowerCase().includes(query) ||
+          (item.locality || "").toLowerCase().includes(query) ||
+          (item.primaryPhone || "").toLowerCase().includes(query) ||
+          (item.secondaryEmail || "").toLowerCase().includes(query) ||
+          (item.category || "").toLowerCase().includes(query) ||
+          (item.genderType || "").toLowerCase().includes(query) ||
+          (item.address || "").toLowerCase().includes(query);
         if (!match) return false;
       }
 
@@ -612,14 +680,25 @@ function CRMPage() {
       updated = parsed;
     } else {
       // Append mode - avoid duplicates by businessName
-      const existingNames = new Set(leads.map((l) => l.businessName.toLowerCase().trim()));
+      const existingNames = new Set(
+        leads.map((l) => (l.businessName || "").toLowerCase().trim()).filter(Boolean)
+      );
       const newItems = parsed.filter(
-        (p) => !existingNames.has(p.businessName.toLowerCase().trim())
+        (p) => !existingNames.has((p.businessName || "").toLowerCase().trim())
       );
       updated = [...leads, ...newItems];
     }
 
     persistLeads(updated);
+    try {
+      void fetch(`${API_BASE}/crm/leads/sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leads: parsed }),
+      });
+    } catch {
+      // offline fallback
+    }
     setShowImportModal(false);
     setImportText("");
     setImportParsedCount(null);
@@ -633,6 +712,7 @@ function CRMPage() {
   const handleOpenCreate = () => {
     setEditingId(null);
     setForm({ ...emptyForm });
+    setFormErrors({});
     setShowFormModal(true);
   };
 
@@ -655,96 +735,172 @@ function CRMPage() {
       status: lead.status || "New",
       notes: lead.notes || "",
     });
+    setFormErrors({});
     setShowFormModal(true);
   };
 
   // Save Lead Form (persists to local database & sends to backend database API)
   const handleSaveForm = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const errors: Record<string, string> = {};
+
+    // 1. Business Name Validation
     if (!form.businessName.trim()) {
-      alert("Please enter the Business / Hostel Name.");
+      errors.businessName = "Please enter the Business / Hostel Name.";
+    }
+
+    // 2. Primary Phone Validation (Formal phone format: 10-15 digits)
+    const rawPhone = (form.primaryPhone || "").trim();
+    const cleanPhone = rawPhone.replace(/[^0-9]/g, "");
+    if (!editingId && !rawPhone) {
+      errors.primaryPhone = "Formal phone number is required to add lead.";
+    } else if (rawPhone && (cleanPhone.length < 10 || cleanPhone.length > 15)) {
+      errors.primaryPhone = "Please enter a valid phone number (at least 10 digits, e.g. 9881060565 or +91 98810 60565).";
+    }
+
+    // 3. Secondary Email Validation (Formal email format: user@domain.com)
+    const rawEmail = (form.secondaryEmail || "").trim();
+    const formalEmailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!editingId && !rawEmail) {
+      errors.secondaryEmail = "Formal email address is required to add lead.";
+    } else if (rawEmail && !formalEmailRegex.test(rawEmail)) {
+      errors.secondaryEmail = "Please enter a formal email format (e.g. contact@hostel.com or admin@domain.org).";
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
       return;
     }
 
+    setFormErrors({});
     setSaving(true);
-    let updated: CRMLead[];
+
     const payload = {
       ...form,
       source: form.source || "Meta",
     };
 
-    if (editingId) {
-      updated = leads.map((l) => (l.id === editingId ? { ...payload, id: editingId } : l));
-      setFeedbackMsg({
-        type: "success",
-        text: `Property "${form.businessName}" updated successfully in database.`,
-      });
-    } else {
-      const newRecord: CRMLead = {
-        ...payload,
-        id: `crm-${Date.now()}`,
-        createdAt: new Date().toISOString(),
-      };
-      updated = [newRecord, ...leads];
-      setFeedbackMsg({
-        type: "success",
-        text: `New property lead "${form.businessName}" registered & saved to database!`,
-      });
-    }
-
-    persistLeads(updated);
-
-    // Save to Database API
     try {
       if (editingId) {
-        await fetch(`${API_BASE}/crm/leads/${editingId}`, {
+        const res = await apiFetch(`/crm/leads/${encodeURIComponent(editingId)}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({ ...payload, id: editingId }),
         });
+
+        if (res.ok) {
+          const json = await res.json();
+          const serverUpdated = json.data || json.lead || { ...payload, id: editingId };
+          const updated = leads.map((l) => (l.id === editingId ? serverUpdated : l));
+          persistLeads(updated);
+          setDbStatus("connected");
+          setLastSyncTime(new Date().toLocaleTimeString());
+          setFeedbackMsg({
+            type: "success",
+            text: `Property "${form.businessName}" updated successfully in PostgreSQL database!`,
+          });
+          setShowFormModal(false);
+          setEditingId(null);
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          const errMsg = errData.errors?.join(", ") || errData.message || res.statusText || "Database update failed";
+          setFeedbackMsg({
+            type: "error",
+            text: `Database update failed: ${errMsg}`,
+          });
+        }
       } else {
-        await fetch(`${API_BASE}/crm/leads`, {
+        const newRecordPayload: CRMLead = {
+          ...payload,
+          id: `crm-${Date.now()}`,
+          createdAt: new Date().toISOString(),
+        };
+
+        const res = await apiFetch("/crm/leads", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+          body: JSON.stringify(newRecordPayload),
         });
-      }
-      setDbStatus("connected");
-    } catch {
-      // Backend offline, safely persisted in local database storage
-    }
 
-    setSaving(false);
-    setShowFormModal(false);
-    setEditingId(null);
+        if (res.ok) {
+          const json = await res.json();
+          const serverCreated = json.data || json.lead || newRecordPayload;
+          const updated = [serverCreated, ...leads];
+          persistLeads(updated);
+          setDbStatus("connected");
+          setLastSyncTime(new Date().toLocaleTimeString());
+          setFeedbackMsg({
+            type: "success",
+            text: `New property lead "${form.businessName}" saved directly to PostgreSQL database!`,
+          });
+          setShowFormModal(false);
+          setEditingId(null);
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          const errMsg = errData.errors?.join(", ") || errData.message || res.statusText || "Database creation failed";
+          setFeedbackMsg({
+            type: "error",
+            text: `Database rejected lead: ${errMsg}`,
+          });
+        }
+      }
+    } catch (err: any) {
+      setFeedbackMsg({
+        type: "error",
+        text: `Unable to connect to backend on port 5000: ${err?.message || "Connection refused"}. Please ensure backend server is running.`,
+      });
+      setDbStatus("local");
+    } finally {
+      setSaving(false);
+    }
   };
 
   // Delete Lead
   const handleDeleteLead = async (lead: CRMLead) => {
     if (
       !window.confirm(
-        `Are you sure you want to delete "${lead.businessName}"? This action cannot be undone.`
+        `Are you sure you want to delete "${lead.businessName}"? This action will permanently remove it from the database.`
       )
     ) {
       return;
     }
 
-    const filtered = leads.filter((l) => l.id !== lead.id);
-    persistLeads(filtered);
-    if (viewingLead?.id === lead.id) {
-      setViewingLead(null);
-    }
-    setFeedbackMsg({
-      type: "success",
-      text: `Deleted "${lead.businessName}" from CRM database.`,
-    });
-
-    // Delete on Database API
     try {
-      await fetch(`${API_BASE}/crm/leads/${lead.id}`, { method: "DELETE" });
-      setDbStatus("connected");
-    } catch {
-      // Backend offline, safely removed from local database
+      const res = await apiFetch(`/crm/leads/${encodeURIComponent(lead.id)}`, {
+        method: "DELETE",
+      });
+
+      if (res.ok || res.status === 404) {
+        const filtered = leads.filter((l) => l.id !== lead.id);
+        persistLeads(filtered);
+        if (viewingLead?.id === lead.id) {
+          setViewingLead(null);
+        }
+        setDbStatus("connected");
+        setLastSyncTime(new Date().toLocaleTimeString());
+        setFeedbackMsg({
+          type: "success",
+          text: `Deleted "${lead.businessName}" permanently from PostgreSQL database.`,
+        });
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setFeedbackMsg({
+          type: "error",
+          text: `Database delete failed: ${errData.message || res.statusText}`,
+        });
+      }
+    } catch (err: any) {
+      // If network failed, remove locally and notify
+      const filtered = leads.filter((l) => l.id !== lead.id);
+      persistLeads(filtered);
+      if (viewingLead?.id === lead.id) {
+        setViewingLead(null);
+      }
+      setFeedbackMsg({
+        type: "error",
+        text: `Removed from local view, but could not reach backend to delete from database: ${err?.message || "Connection failed"}`,
+      });
     }
   };
 
@@ -834,7 +990,7 @@ function CRMPage() {
             <button
               type="button"
               onClick={handleSyncWithDatabase}
-              title={`Database Status: ${dbStatus === "connected" ? "Connected (localhost:5001 / PostgreSQL)" : "Persistent Local DB Cache (Ready)"}`}
+              title={`Database Status: ${dbStatus === "connected" ? "Connected (localhost:5000 / PostgreSQL)" : "Persistent Local DB Cache (Ready)"}`}
               className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold shadow-2xs whitespace-nowrap transition-colors ${
                 dbStatus === "connected"
                   ? "border-emerald-300 bg-emerald-50/80 text-emerald-800 hover:bg-emerald-100"
@@ -1593,10 +1749,16 @@ function CRMPage() {
                       type="text"
                       required
                       value={form.businessName}
-                      onChange={(e) => setForm((p) => ({ ...p, businessName: e.target.value }))}
+                      onChange={(e) => {
+                        setForm((p) => ({ ...p, businessName: e.target.value }));
+                        if (formErrors.businessName) setFormErrors((p) => ({ ...p, businessName: "" }));
+                      }}
                       placeholder="e.g. Saraswati Boys Hostel"
-                      className={inputClass}
+                      className={`${inputClass} ${formErrors.businessName ? "border-red-500 ring-1 ring-red-500" : ""}`}
                     />
+                    {formErrors.businessName && (
+                      <p className="mt-1 text-[11px] font-semibold text-red-600">{formErrors.businessName}</p>
+                    )}
                   </div>
                 </div>
 
@@ -1660,26 +1822,48 @@ function CRMPage() {
                       Public Phone Number (Primary Contact) <span className="text-red-500">*</span>
                     </label>
                     <input
-                      type="text"
+                      type="tel"
+                      required
                       value={form.primaryPhone}
-                      onChange={(e) => setForm((p) => ({ ...p, primaryPhone: e.target.value }))}
-                      placeholder="e.g. 98810 60565 or 08401931815"
-                      className={`${inputClass} border-emerald-300 focus:border-emerald-500`}
+                      onChange={(e) => {
+                        setForm((p) => ({ ...p, primaryPhone: e.target.value }));
+                        if (formErrors.primaryPhone) setFormErrors((p) => ({ ...p, primaryPhone: "" }));
+                      }}
+                      placeholder="e.g. 9881060565 or +91 98810 60565"
+                      className={`${inputClass} ${
+                        formErrors.primaryPhone ? "border-red-500 ring-1 ring-red-500" : "border-emerald-300 focus:border-emerald-500"
+                      }`}
                     />
+                    {formErrors.primaryPhone ? (
+                      <p className="mt-1 text-[11px] font-semibold text-red-600">{formErrors.primaryPhone}</p>
+                    ) : (
+                      <p className="mt-1 text-[10px] text-gray-400">Must be a valid formal phone number (10 to 15 digits)</p>
+                    )}
                   </div>
 
                   <div>
                     <label className="block text-xs font-semibold text-blue-800 mb-1 flex items-center gap-1">
                       <Mail className="h-3.5 w-3.5" />
-                      Public Email (Secondary Contact)
+                      Public Email (Secondary Contact) <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="email"
+                      required
                       value={form.secondaryEmail}
-                      onChange={(e) => setForm((p) => ({ ...p, secondaryEmail: e.target.value }))}
-                      placeholder="e.g. admin@mvpm.org"
-                      className={`${inputClass} border-blue-200 focus:border-blue-500`}
+                      onChange={(e) => {
+                        setForm((p) => ({ ...p, secondaryEmail: e.target.value }));
+                        if (formErrors.secondaryEmail) setFormErrors((p) => ({ ...p, secondaryEmail: "" }));
+                      }}
+                      placeholder="e.g. admin@mvpm.org or info@hostel.com"
+                      className={`${inputClass} ${
+                        formErrors.secondaryEmail ? "border-red-500 ring-1 ring-red-500" : "border-blue-200 focus:border-blue-500"
+                      }`}
                     />
+                    {formErrors.secondaryEmail ? (
+                      <p className="mt-1 text-[11px] font-semibold text-red-600">{formErrors.secondaryEmail}</p>
+                    ) : (
+                      <p className="mt-1 text-[10px] text-gray-400">Must be a formal email format (e.g. user@domain.com)</p>
+                    )}
                   </div>
                 </div>
 

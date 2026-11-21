@@ -2,7 +2,7 @@ import { AppShell } from "@/components/erp/AppShell";
 import { useEffect, useState } from "react";
 
 const API_BASE = (
-  import.meta.env["VITE_API_URL"] || "http://localhost:5001/api"
+  import.meta.env["VITE_API_URL"] || "http://localhost:5000/api"
 ).replace(/\/+$/, "");
 
 type VendorOption = {
