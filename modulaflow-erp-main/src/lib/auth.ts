@@ -1,6 +1,14 @@
 
 export type UserRole = "Admin" | "Manager" | "Employee";
-
+export interface EmployeeProfile {
+  employeeId: string;
+  fullName: string;
+  email: string;
+  phone: string | null;
+  designation: string;
+  department: string;
+  status: string;
+}
 export interface AuthUser {
   id: string;
   name: string;
@@ -9,6 +17,7 @@ export interface AuthUser {
   department?: string;
   isAdmin: boolean;
   mustChangePassword: boolean;
+  employeeProfile?: EmployeeProfile | null;
 }
 
 export interface EmployeeAccount {
@@ -176,15 +185,39 @@ export async function loginWithRole(
       };
     }
 
-   const user: AuthUser = {
-  id: data.user.id,
-  name: data.user.name,
-  email: data.user.email,
-  role: actualRole,
-  department: data.user.department,
-  isAdmin: actualRole === "Admin",
-  mustChangePassword: data.user.mustChangePassword === true,
-};
+     let employeeProfile: EmployeeProfile | null = null;
+
+    if (actualRole === "Employee") {
+      try {
+        const profileResponse = await fetch(`${API_BASE}/auth/me`, {
+          headers: {
+            Authorization: `Bearer ${data.token}`,
+          },
+        });
+
+        const profileData = await profileResponse.json();
+
+        if (profileResponse.ok && profileData.success) {
+          employeeProfile = profileData.user?.employeeProfile || null;
+        }
+      } catch (error) {
+        console.error("Unable to load employee profile:", error);
+      }
+    }
+
+    const user: AuthUser = {
+      id: data.user.id,
+      name: data.user.name,
+      email: data.user.email,
+      role: actualRole,
+      department: data.user.department,
+      isAdmin: actualRole === "Admin",
+      mustChangePassword: data.user.mustChangePassword === true,
+      employeeProfile,
+      
+    };
+
+
 
     saveSession(user, data.token);
 

@@ -1,4 +1,4 @@
-const express = require("express");
+﻿const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
@@ -46,6 +46,9 @@ const authLimiter = rateLimit({
 
 // Import authentication routes
 const authRoutes = require("./routes/authRoutes");
+const operationsRoutes = require("./routes/operationsRoutes");
+const employeeRoutes = require("./routes/employeeRoutes");
+const attendanceRoutes = require("./routes/attendanceRoutes");
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {
@@ -70,4 +73,11 @@ app.use(
   authRoutes
 );
 
+app.use("/api/operations", operationsRoutes);
+app.use("/api/employees", employeeRoutes);
+app.use("/api/attendance", attendanceRoutes);
+
 module.exports = app;
+
+
+
