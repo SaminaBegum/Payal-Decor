@@ -17,6 +17,8 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { AppShell } from "@/components/erp/AppShell";
+import { generateId } from "@/lib/utils";
+import { toastService } from "@/services/toastService";
 import {
   EstimateDocument,
   QUOTATION_TERMS,
@@ -111,7 +113,7 @@ const PRINT_FIX = `
 `;
 
 const emptyItem = (): QuotationItem => ({
-  id: crypto.randomUUID(),
+  id: generateId("item"),
   itemName: "",
   description: "",
   hsn: "9403",
@@ -209,7 +211,7 @@ function getTotals(items: QuotationItem[], gstRate: number) {
 
 function normalizeItem(row: any): QuotationItem {
   return {
-    id: String(row.id ?? crypto.randomUUID()),
+    id: String(row.id ?? generateId("item")),
     itemName: row.itemName ?? row.name ?? "",
     description: row.description ?? "",
     hsn: row.hsn ?? "9403",
@@ -348,7 +350,7 @@ export function QuotationsPage() {
       for (const s of studioList) {
         const rawItems = Array.isArray(s.items) ? s.items : [];
         const items = rawItems.map((i: any) => ({
-          id: String(i.id ?? crypto.randomUUID()),
+          id: String(i.id ?? generateId("item")),
           itemName: i.itemName || s.projectName || "Modular Furniture",
           description: i.description || (i.lengthMm ? `Size: ${i.lengthMm} x ${i.widthMm} x ${i.heightMm} mm` : ""),
           hsn: "9403",
@@ -459,11 +461,12 @@ export function QuotationsPage() {
         ? estimate.terms.map((t) => t.replace("Estimate Valid", "Quotation Valid")).join("\n")
         : previous.termsText,
       items: estimate.items.length
-        ? estimate.items.map((i) => ({ ...i, id: crypto.randomUUID() }))
+        ? estimate.items.map((i) => ({ ...i, id: generateId("item") }))
         : previous.items,
     }));
 
     setSuccess(`Loaded items & pricing from Estimate #${estimate.estimateNo} (${estimate.customerName}).`);
+    toastService.info("Estimate Loaded", `Auto-filled items from Estimate #${estimate.estimateNo}`);
   }
 
   function openCreate() {
@@ -533,36 +536,50 @@ export function QuotationsPage() {
 
   function validateForm() {
     if (!form.customerName.trim()) {
-      setError("Please enter Customer / Client Name.");
+      const msg = "Please enter Customer / Client Name.";
+      setError(msg);
+      toastService.warning("Validation Error", msg);
       return false;
     }
     if (!form.projectName.trim()) {
-      setError("Please enter Project / Site Name.");
+      const msg = "Please enter Project / Site Name.";
+      setError(msg);
+      toastService.warning("Validation Error", msg);
       return false;
     }
     if (!form.quotationDate) {
-      setError("Please select the Quotation Date.");
+      const msg = "Please select the Quotation Date.";
+      setError(msg);
+      toastService.warning("Validation Error", msg);
       return false;
     }
 
     for (const item of form.items) {
       if (!item.itemName.trim()) {
-        setError("Please enter an Item Name for all line items.");
+        const msg = "Please enter an Item Name for all line items.";
+        setError(msg);
+        toastService.warning("Validation Error", msg);
         return false;
       }
       if (!Number.isFinite(Number(item.quantity)) || item.quantity <= 0) {
-        setError("Item quantity must be greater than zero.");
+        const msg = "Item quantity must be greater than zero.";
+        setError(msg);
+        toastService.warning("Validation Error", msg);
         return false;
       }
       if (!Number.isFinite(Number(item.rate)) || item.rate < 0) {
-        setError("Item rate cannot be negative.");
+        const msg = "Item rate cannot be negative.";
+        setError(msg);
+        toastService.warning("Validation Error", msg);
         return false;
       }
     }
 
     const gstRate = Number(form.gstRate);
     if (!Number.isFinite(gstRate) || gstRate < 0 || gstRate > 100) {
-      setError("Please enter a valid GST percentage (e.g. 18).");
+      const msg = "Please enter a valid GST percentage (e.g. 18).";
+      setError(msg);
+      toastService.warning("Validation Error", msg);
       return false;
     }
 
@@ -620,11 +637,14 @@ export function QuotationsPage() {
       });
 
       setIsSaved(true);
+      const title = editingId ? "Quotation Updated" : "Quotation Created";
+      const desc = `${form.customerName} - ${form.projectName} (₹${quotationTotals.grandTotal.toLocaleString("en-IN")})`;
       setSuccess(
         editingId
           ? "Quotation updated successfully in PostgreSQL."
           : "Quotation saved directly to PostgreSQL database!",
       );
+      toastService.success(title, desc);
 
       await loadQuotations();
 
@@ -636,9 +656,9 @@ export function QuotationsPage() {
       }, 1200);
     } catch (err) {
       setIsSaved(false);
-      setError(
-        err instanceof Error ? err.message : "Quotation could not be saved to database.",
-      );
+      const msg = err instanceof Error ? err.message : "Quotation could not be saved to database.";
+      setError(msg);
+      toastService.error("Save Failed", msg);
     } finally {
       setSaving(false);
     }
@@ -655,6 +675,7 @@ export function QuotationsPage() {
     try {
       await apiRequest(`/quotations/${encodeURIComponent(item.id)}`, { method: "DELETE" });
       setSuccess(`Quotation "${item.quotationNo}" deleted successfully from PostgreSQL.`);
+      toastService.success("Quotation Deleted", `Quotation "${item.quotationNo}" removed successfully.`);
 
       if (viewing?.id === item.id) setViewing(null);
       if (editingId === item.id) {
@@ -664,7 +685,9 @@ export function QuotationsPage() {
 
       await loadQuotations();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Quotation could not be deleted.");
+      const msg = err instanceof Error ? err.message : "Quotation could not be deleted.";
+      setError(msg);
+      toastService.error("Delete Failed", msg);
     }
   }
 

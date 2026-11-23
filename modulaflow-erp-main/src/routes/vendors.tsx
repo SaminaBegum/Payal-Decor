@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/erp/AppShell";
+import { toastService } from "@/services/toastService";
 
 const API_BASE = (
   import.meta.env["VITE_API_URL"] || "http://localhost:5000/api"
@@ -286,10 +287,15 @@ export function VendorsPage() {
 
       // Trigger "Saved" interactive state
       setIsSaved(true);
+      const vendorLabel = form.company || form.name || "Vendor";
       setSuccess(
         editingId
           ? "Vendor details updated successfully."
           : "New vendor saved successfully.",
+      );
+      toastService.success(
+        editingId ? "Vendor Updated" : "Vendor Registered",
+        `"${vendorLabel}" has been saved successfully.`
       );
 
       // Hold "Saved" feedback for 1.2 seconds before closing
@@ -301,7 +307,9 @@ export function VendorsPage() {
         await loadVendors();
       }, 1200);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save vendor.");
+      const msg = err instanceof Error ? err.message : "Failed to save vendor.";
+      setError(msg);
+      toastService.error("Save Failed", msg);
       setSaving(false);
     }
   }
@@ -311,6 +319,7 @@ export function VendorsPage() {
 
     setError("");
     setSuccess("");
+    const vendorLabel = deleteConfirmVendor.company || deleteConfirmVendor.name || "Vendor";
 
     try {
       const response = await fetch(
@@ -319,11 +328,14 @@ export function VendorsPage() {
       );
 
       await readResponse(response);
-      setSuccess(`Vendor "${deleteConfirmVendor.company || deleteConfirmVendor.name}" removed successfully.`);
+      setSuccess(`Vendor "${vendorLabel}" removed successfully.`);
+      toastService.success("Vendor Deleted", `"${vendorLabel}" was removed successfully.`);
       setDeleteConfirmVendor(null);
       await loadVendors();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete vendor.");
+      const msg = err instanceof Error ? err.message : "Failed to delete vendor.";
+      setError(msg);
+      toastService.error("Delete Failed", msg);
     }
   }
 
@@ -332,6 +344,7 @@ export function VendorsPage() {
     if (!text) return;
     navigator.clipboard.writeText(text);
     setCopiedId(id);
+    toastService.info("Copied to Clipboard", text);
     setTimeout(() => setCopiedId(null), 2000);
   };
 
@@ -340,6 +353,7 @@ export function VendorsPage() {
     const exportList = filteredVendors.length > 0 ? filteredVendors : vendors;
     if (exportList.length === 0) {
       alert("No vendor records to export.");
+      toastService.info("Export Info", "No vendor records to export.");
       return;
     }
 
@@ -391,6 +405,7 @@ export function VendorsPage() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    toastService.success("Export Complete", `Exported ${exportList.length} vendors to CSV.`);
   };
 
   // Download Sample CSV Import Template
@@ -436,6 +451,7 @@ export function VendorsPage() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    toastService.info("Template Downloaded", "Sample CSV template downloaded.");
   };
 
   // Parse CSV helper for bulk import

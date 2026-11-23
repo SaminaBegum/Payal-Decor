@@ -37,6 +37,7 @@ import {
 
 import { AppShell } from "@/components/erp/AppShell";
 import { EstimateBuilder } from "@/components/erp/EstimateBuilder";
+import { toastService } from "@/services/toastService";
 
 import { workstationBom } from "@/lib/erp/data";
 import {
@@ -747,6 +748,7 @@ export function Estimation() {
     if (rec.markupPercent) setPercent(Number(rec.markupPercent));
     setActiveTab("studio");
     setSuccess(`Cloned details from #${rec.estimationNumber} into studio.`);
+    toastService.info("Estimate Cloned", `Loaded #${rec.estimationNumber} into Studio.`);
   }
 
   //
@@ -756,12 +758,16 @@ export function Estimation() {
     setSuccess("");
 
     if (!customerName.trim()) {
-      setError("Please enter Customer / Client Name.");
+      const msg = "Please enter Customer / Client Name.";
+      setError(msg);
+      toastService.warning("Validation Error", msg);
       return;
     }
 
     if (length <= 0 || width <= 0 || qty <= 0) {
-      setError("Length, width and quantity must be greater than zero.");
+      const msg = "Length, width and quantity must be greater than zero.";
+      setError(msg);
+      toastService.warning("Validation Error", msg);
       return;
     }
 
@@ -821,6 +827,10 @@ export function Estimation() {
       setSuccess(
         `Estimation #${estimationNumber} and exploded BOQ saved directly to PostgreSQL!`,
       );
+      toastService.success(
+        "Estimation & BOQ Saved",
+        `#${estimationNumber} (${customerName}) saved directly to PostgreSQL!`
+      );
       setEstimationNumber(
         `EST-${new Date().getFullYear().toString().slice(-2)}-${Math.floor(1000 + Math.random() * 9000)}`,
       );
@@ -832,11 +842,12 @@ export function Estimation() {
       }, 2500);
     } catch (err) {
       setIsSaved(false);
-      setError(
+      const msg =
         err instanceof Error
           ? `Estimation could not be saved: ${err.message}`
-          : "Estimation could not be saved to database.",
-      );
+          : "Estimation could not be saved to database.";
+      setError(msg);
+      toastService.error("Save Failed", msg);
     } finally {
       setSaving(false);
     }
@@ -857,12 +868,15 @@ export function Estimation() {
         method: "DELETE",
       });
       setSuccess(`Estimation "${estNum}" deleted successfully from PostgreSQL.`);
+      toastService.success("Estimation Deleted", `Estimation "${estNum}" removed from database.`);
       if (selectedRecord?.id === id) {
         setSelectedRecord(null);
       }
       await loadEstimations();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete estimation.");
+      const msg = err instanceof Error ? err.message : "Failed to delete estimation.";
+      setError(msg);
+      toastService.error("Delete Failed", msg);
     }
   }
 
