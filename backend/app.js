@@ -14,6 +14,7 @@ const measurementRoutes = require("./routes/measurementRoutes");
 const estimateDocRoutes = require("./routes/estimateDocRoutes");
 const quotationRoutes = require("./routes/quotationRoutes");
 const vendorRoutes = require("./routes/vendorRoutes");
+const purchaseRoutes = require("./routes/purchaseRoutes");
 
 const app = express();
 
@@ -102,5 +103,10 @@ app.use("/estimate-docs", estimateDocRoutes);
 // Vendor routes
 app.use("/api/vendors", vendorRoutes);
 app.use("/vendors", vendorRoutes);
+
+// Purchase Order routes
+app.use("/api/purchase", purchaseRoutes);
+app.use("/purchase", purchaseRoutes);
+app.use("/api/purchase-orders", purchaseRoutes);
 
 module.exports = app;
