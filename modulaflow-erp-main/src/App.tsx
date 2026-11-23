@@ -9,6 +9,7 @@ import {
 } from "react-router-dom";
 import { I18nextProvider } from "react-i18next";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Toaster } from "sonner";
 
 import i18n from "./i18n";
 import { isLoggedIn } from "./lib/auth";
@@ -144,6 +145,7 @@ export default function App() {
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
           <AppRoutes />
+          <Toaster position="top-right" richColors closeButton duration={3500} />
         </BrowserRouter>
       </QueryClientProvider>
     </I18nextProvider>
