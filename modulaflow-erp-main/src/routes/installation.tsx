@@ -53,6 +53,14 @@ interface DispatchOption {
   status: string;
 }
 
+interface WorkOrderOption {
+  id: number | string;
+  workOrderNo: string;
+  customerName: string;
+  projectName: string | null;
+  status: string;
+}
+
 const emptyForm = () => ({
   dispatchNo: "",
   workOrderNo: "",
@@ -105,6 +113,7 @@ function dateInput(value: string | null) {
 function InstallationPage() {
   const [installations, setInstallations] = useState<Installation[]>([]);
   const [dispatches, setDispatches] = useState<DispatchOption[]>([]);
+  const [workOrders, setWorkOrders] = useState<WorkOrderOption[]>([]);
 
   const [form, setForm] = useState<FormState>(emptyForm());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -138,6 +147,7 @@ function InstallationPage() {
   useEffect(() => {
     void loadInstallations();
 
+    // Dispatches (Dispatch module backend तयार झाल्यावर आपोआप भरतील)
     void (async () => {
       try {
         const response = await fetch(`${API_BASE}/dispatches`);
@@ -147,12 +157,30 @@ function InstallationPage() {
         setDispatches([]);
       }
     })();
+
+    // Work Orders (/api/work-orders → { success, data: [...] })
+    void (async () => {
+      try {
+        const response = await fetch(`${API_BASE}/work-orders`);
+        const data = await readResponse(response);
+        setWorkOrders(data.data ?? []);
+      } catch {
+        setWorkOrders([]);
+      }
+    })();
   }, [loadInstallations]);
 
   // फक्त Delivered dispatches दाखवायचे
   const deliveredDispatches = useMemo(
     () => dispatches.filter((d) => d.status === "Delivered"),
     [dispatches],
+  );
+
+  // Draft आणि Cancelled work orders installation साठी दाखवू नका
+  const selectableWorkOrders = useMemo(
+    () =>
+      workOrders.filter((w) => w.status !== "Draft" && w.status !== "Cancelled"),
+    [workOrders],
   );
 
   const counts = useMemo(() => {
@@ -202,6 +230,17 @@ function InstallationPage() {
       customerName: d ? d.customerName : previous.customerName,
       projectName: d?.projectName ?? previous.projectName,
       siteAddress: d ? d.deliveryAddress : previous.siteAddress,
+    }));
+  }
+
+  function pickWorkOrder(workOrderNo: string) {
+    const w = workOrders.find((x) => x.workOrderNo === workOrderNo);
+
+    setForm((previous) => ({
+      ...previous,
+      workOrderNo,
+      customerName: w ? w.customerName : previous.customerName,
+      projectName: w?.projectName ?? previous.projectName,
     }));
   }
 
@@ -324,6 +363,11 @@ function InstallationPage() {
   const inputClass =
     "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
 
+  // Edit करताना जुना work order list मध्ये नसेल तरी तो select मध्ये दिसावा
+  const currentWorkOrderMissing =
+    form.workOrderNo !== "" &&
+    !selectableWorkOrders.some((w) => w.workOrderNo === form.workOrderNo);
+
   return (
     <AppShell title="Installation">
       <div className="space-y-5 p-4 md:p-6">
@@ -429,12 +473,22 @@ function InstallationPage() {
                 </label>
 
                 <label className="space-y-1 text-sm">
-                  <span>Work Order No.</span>
-                  <input
+                  <span>Work Order</span>
+                  <select
                     className={inputClass}
                     value={form.workOrderNo}
-                    onChange={(e) => updateField("workOrderNo", e.target.value)}
-                  />
+                    onChange={(e) => pickWorkOrder(e.target.value)}
+                  >
+                    <option value="">— Select Work Order —</option>
+                    {currentWorkOrderMissing && (
+                      <option value={form.workOrderNo}>{form.workOrderNo}</option>
+                    )}
+                    {selectableWorkOrders.map((w) => (
+                      <option key={w.id} value={w.workOrderNo}>
+                        {w.workOrderNo} · {w.customerName}
+                      </option>
+                    ))}
+                  </select>
                 </label>
 
                 <label className="space-y-1 text-sm">
