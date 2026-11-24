@@ -1,5 +1,43 @@
 const pool = require("../config/db");
 
+let tableReady = null;
+
+// Creates the sequence and table on first use if they do not exist
+function ensureTable() {
+  if (!tableReady) {
+    tableReady = (async () => {
+      await pool.query(
+        `CREATE SEQUENCE IF NOT EXISTS installation_no_seq START 1`
+      );
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS installations (
+          id SERIAL PRIMARY KEY,
+          installation_no VARCHAR(30) UNIQUE NOT NULL,
+          dispatch_no VARCHAR(50),
+          work_order_no VARCHAR(50),
+          customer_id VARCHAR(50),
+          customer_name VARCHAR(255) NOT NULL,
+          project_name VARCHAR(255),
+          site_address TEXT NOT NULL,
+          installer_name VARCHAR(255),
+          installer_phone VARCHAR(30),
+          scheduled_date DATE,
+          completed_date DATE,
+          signed_off_by VARCHAR(255),
+          status VARCHAR(20) NOT NULL DEFAULT 'Pending',
+          notes TEXT,
+          created_at TIMESTAMP DEFAULT NOW(),
+          updated_at TIMESTAMP DEFAULT NOW()
+        )
+      `);
+    })().catch((err) => {
+      tableReady = null;
+      throw err;
+    });
+  }
+  return tableReady;
+}
+
 const SELECT_COLUMNS = `
   id::text AS id,
   installation_no AS "installationNo",
@@ -19,6 +57,7 @@ const SELECT_COLUMNS = `
 `;
 
 async function getAll() {
+  await ensureTable();
   const { rows } = await pool.query(
     `SELECT ${SELECT_COLUMNS} FROM installations ORDER BY id DESC`
   );
@@ -26,6 +65,7 @@ async function getAll() {
 }
 
 async function create(d) {
+  await ensureTable();
   const { rows } = await pool.query(
     `INSERT INTO installations
       (installation_no, dispatch_no, work_order_no, customer_id, customer_name,
@@ -45,6 +85,7 @@ async function create(d) {
 }
 
 async function update(id, d) {
+  await ensureTable();
   const { rows } = await pool.query(
     `UPDATE installations SET
        dispatch_no=$1, work_order_no=$2, customer_id=$3, customer_name=$4,
@@ -63,7 +104,8 @@ async function update(id, d) {
 }
 
 async function updateStatus(id, status) {
-  // Completed केल्यावर completed_date रिकामी असेल तर आजची तारीख भरते
+  await ensureTable();
+  // When marked Completed, fill completed_date with today if it is empty
   const { rows } = await pool.query(
     `UPDATE installations SET
        status=$1,
@@ -80,6 +122,7 @@ async function updateStatus(id, status) {
 }
 
 async function remove(id) {
+  await ensureTable();
   const { rowCount } = await pool.query(
     "DELETE FROM installations WHERE id=$1",
     [id]
