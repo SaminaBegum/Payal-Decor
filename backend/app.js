@@ -9,12 +9,14 @@ const authRoutes = require("./routes/authRoutes");
 const crmRoutes = require("./routes/crmRoutes");
 const estimationRoutes = require("./routes/estimationRoutes");
 const bomRoutes = require("./routes/bomRoutes");
+const productionRoutes = require("./routes/productionRoutes");
 const leadRoutes = require("./routes/leadRoutes");
 const measurementRoutes = require("./routes/measurementRoutes");
 const estimateDocRoutes = require("./routes/estimateDocRoutes");
 const quotationRoutes = require("./routes/quotationRoutes");
 const vendorRoutes = require("./routes/vendorRoutes");
-const workOrderRoutes = require("./routes/workOrderRoutes"); // ➕ नवीन
+const workOrderRoutes = require("./routes/workOrderRoutes");
+const purchaseRoutes = require("./routes/purchaseRoutes");
 
 const app = express();
 
@@ -103,6 +105,9 @@ app.use("/quotations", quotationRoutes);
 // BOM & Material Requirement routes
 app.use("/api/bom", bomRoutes);
 
+// Production routes
+app.use("/api/production", productionRoutes);
+
 // Lead Enquiries routes
 app.use("/api/lead-enquiries", leadRoutes);
 
@@ -118,6 +123,11 @@ app.use("/api/vendors", vendorRoutes);
 app.use("/vendors", vendorRoutes);
 
 // Work Order routes
-app.use("/api/work-orders", workOrderRoutes); // ➕ नवीन
+app.use("/api/work-orders", workOrderRoutes);
+
+// Purchase Order routes
+app.use("/api/purchase", purchaseRoutes);
+app.use("/purchase", purchaseRoutes);
+app.use("/api/purchase-orders", purchaseRoutes);
 
 module.exports = app;

@@ -928,7 +928,7 @@ export function Purchase() {
               className="inline-flex items-center gap-1.5 rounded-lg bg-amber-800 px-4 py-2 text-xs sm:text-sm font-medium text-white shadow-2xs hover:bg-amber-900 transition"
             >
               <Plus className="h-4 w-4" />
-              + Create Purchase Order
+              Create Purchase Order
             </button>
           </div>
         </div>
@@ -1554,7 +1554,7 @@ export function Purchase() {
               <p className="text-xs text-gray-400 max-w-sm mx-auto">
                 {search || statusFilter !== "All"
                   ? "Try adjusting your search keywords or status filter."
-                  : "Click '+ Create Purchase Order' above to generate your first supplier procurement order."}
+                  : "Click 'Create Purchase Order' above to generate your first supplier procurement order."}
               </p>
             </div>
           ) : (
