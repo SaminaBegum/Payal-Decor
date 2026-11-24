@@ -11,13 +11,13 @@ export interface EstimateItem {
 }
 
 export interface EstimateData {
-  estimateNo: string; // Quotation No. म्हणूनही वापरता येतो
-  date: string; // YYYY-MM-DD
+  estimateNo: string; //
+  date: string; //
   customerName: string;
   customerAddress?: string;
-  placeOfSupply: string; // "27-Maharashtra"
+  placeOfSupply: string; // 
   items: EstimateItem[];
-  taxRate: number; // 18
+  taxRate: number; // 
   terms?: string[];
 }
 
@@ -44,7 +44,6 @@ export const DEFAULT_TERMS = [
   "Transport At Actual",
 ];
 
-// Quotation साठी वेगळे default terms (फक्त "Estimate" ऐवजी "Quotation")
 export const QUOTATION_TERMS = DEFAULT_TERMS.map((t) =>
   t.replace("Estimate Valid", "Quotation Valid"),
 );
@@ -170,7 +169,7 @@ export function EstimateDocument({
   showPrintButton = true,
 }: {
   data: EstimateData;
-  /** "Estimate" किंवा "Quotation": पानाचं शीर्षक आणि सर्व labels बदलतात */
+  
   title?: "Estimate" | "Quotation";
   showPrintButton?: boolean;
 }) {
