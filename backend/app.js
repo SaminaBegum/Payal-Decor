@@ -17,6 +17,7 @@ const quotationRoutes = require("./routes/quotationRoutes");
 const vendorRoutes = require("./routes/vendorRoutes");
 const workOrderRoutes = require("./routes/workOrderRoutes");
 const purchaseRoutes = require("./routes/purchaseRoutes");
+const reportsRoutes = require("./routes/reportsRoutes");
 
 const app = express();
 
@@ -116,5 +117,9 @@ app.use("/api/work-orders", workOrderRoutes);
 app.use("/api/purchase", purchaseRoutes);
 app.use("/purchase", purchaseRoutes);
 app.use("/api/purchase-orders", purchaseRoutes);
+
+// Business Intelligence & Reports routes
+app.use("/api/reports", reportsRoutes);
+app.use("/reports", reportsRoutes);
 
 module.exports = app;
