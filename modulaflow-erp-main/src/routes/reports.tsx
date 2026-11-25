@@ -162,10 +162,11 @@ export function ReportsPage() {
   }, [selectedModule]);
 
   // Fetch report data from Backend MVC Reports API
-  const fetchReport = useCallback(async (mod: ReportModuleId, range: string) => {
+  const fetchReport = useCallback(async (mod: ReportModuleId, range: string, forceRefresh = false) => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/reports?module=${mod}&timeRange=${range}`);
+      const refreshParam = forceRefresh ? "&refresh=true" : "";
+      const response = await fetch(`${API_BASE}/reports?module=${mod}&timeRange=${range}${refreshParam}`);
       if (response.ok) {
         const payload = await response.json();
         if (payload.success && payload.data) {
@@ -197,7 +198,7 @@ export function ReportsPage() {
   };
 
   const handleRefresh = () => {
-    void fetchReport(selectedModule, timeRange);
+    void fetchReport(selectedModule, timeRange, true);
     toastService.success("Refreshed", "Business report data updated.");
   };
 

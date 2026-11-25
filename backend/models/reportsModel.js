@@ -40,70 +40,64 @@ function buildDateCondition(columnName, timeRange, startDate, endDate, params) {
 async function getExecutiveOverview(filters = {}) {
   const { timeRange, startDate, endDate } = filters;
 
-  // Purchase summary
   const poParams = [];
   const poDateCond = buildDateCondition("order_date", timeRange, startDate, endDate, poParams);
   const poWhere = poDateCond ? `WHERE ${poDateCond}` : "";
-  const poRes = await pool.query(`
-    SELECT 
-      COUNT(*) AS total_pos,
-      COALESCE(SUM(grand_total), 0) AS total_spend,
-      COALESCE(SUM(cgst_amount + sgst_amount + igst_amount), 0) AS input_gst,
-      COUNT(CASE WHEN status = 'Pending' THEN 1 END) AS pending_pos,
-      COUNT(CASE WHEN status = 'Received' THEN 1 END) AS received_pos
-    FROM public.purchase_orders ${poWhere};
-  `, poParams);
 
-  // Quotation summary
   const qParams = [];
   const qDateCond = buildDateCondition("quotationDate", timeRange, startDate, endDate, qParams);
   const qWhere = qDateCond ? `WHERE ${qDateCond}` : "";
-  const qRes = await pool.query(`
-    SELECT 
-      COUNT(*) AS total_quotations,
-      COALESCE(SUM("grandTotal"), 0) AS total_quoted_value,
-      COALESCE(SUM("gstAmount"), 0) AS output_gst,
-      COUNT(CASE WHEN LOWER(status) = 'accepted' THEN 1 END) AS accepted_quotes,
-      COUNT(CASE WHEN LOWER(status) = 'sent' THEN 1 END) AS sent_quotes,
-      COALESCE(SUM(CASE WHEN LOWER(status) = 'accepted' THEN "grandTotal" ELSE 0 END), 0) AS won_value
-    FROM public.quotations ${qWhere};
-  `, qParams);
 
-  // Vendor summary
-  const vRes = await pool.query(`
-    SELECT 
-      COUNT(*) AS total_vendors,
-      COUNT(CASE WHEN status = 'Active' OR status IS NULL THEN 1 END) AS active_vendors,
-      COUNT(DISTINCT category) AS total_categories
-    FROM public."Vendor";
-  `);
-
-  // Estimation summary
-  const estRes = await pool.query(`
-    SELECT 
-      COUNT(*) AS total_estimations,
-      COALESCE(SUM("totalSellingPrice"), 0) AS total_est_value,
-      COALESCE(SUM("totalPrimeCost"), 0) AS total_prime_cost
-    FROM public.estimations;
-  `);
-
-  // Leads summary
-  const leadRes = await pool.query(`
-    SELECT 
-      COUNT(*) AS total_leads,
-      COUNT(CASE WHEN LOWER(status) IN ('converted', 'won') THEN 1 END) AS converted_leads,
-      COALESCE(SUM(CASE WHEN budget ~ '^[0-9]+$' THEN budget::numeric ELSE 0 END), 0) AS total_pipeline_budget
-    FROM public."LeadEnquiry";
-  `);
-
-  // Production summary
-  const prodRes = await pool.query(`
-    SELECT 
-      COUNT(*) AS total_jobs,
-      COUNT(CASE WHEN LOWER("currentStage") = 'quality check' OR LOWER("currentStage") = 'completed' THEN 1 END) AS completed_jobs,
-      COUNT(CASE WHEN LOWER("currentStage") != 'quality check' AND LOWER("currentStage") != 'completed' THEN 1 END) AS active_jobs
-    FROM public."ProductionJob";
-  `);
+  // Execute all 6 summary queries concurrently in parallel
+  const [poRes, qRes, vRes, estRes, leadRes, prodRes] = await Promise.all([
+    pool.query(`
+      SELECT 
+        COUNT(*) AS total_pos,
+        COALESCE(SUM(grand_total), 0) AS total_spend,
+        COALESCE(SUM(cgst_amount + sgst_amount + igst_amount), 0) AS input_gst,
+        COUNT(CASE WHEN status = 'Pending' THEN 1 END) AS pending_pos,
+        COUNT(CASE WHEN status = 'Received' THEN 1 END) AS received_pos
+      FROM public.purchase_orders ${poWhere};
+    `, poParams),
+    pool.query(`
+      SELECT 
+        COUNT(*) AS total_quotations,
+        COALESCE(SUM("grandTotal"), 0) AS total_quoted_value,
+        COALESCE(SUM("gstAmount"), 0) AS output_gst,
+        COUNT(CASE WHEN LOWER(status) = 'accepted' THEN 1 END) AS accepted_quotes,
+        COUNT(CASE WHEN LOWER(status) = 'sent' THEN 1 END) AS sent_quotes,
+        COALESCE(SUM(CASE WHEN LOWER(status) = 'accepted' THEN "grandTotal" ELSE 0 END), 0) AS won_value
+      FROM public.quotations ${qWhere};
+    `, qParams),
+    pool.query(`
+      SELECT 
+        COUNT(*) AS total_vendors,
+        COUNT(CASE WHEN status = 'Active' OR status IS NULL THEN 1 END) AS active_vendors,
+        COUNT(DISTINCT category) AS total_categories
+      FROM public."Vendor";
+    `),
+    pool.query(`
+      SELECT 
+        COUNT(*) AS total_estimations,
+        COALESCE(SUM("totalSellingPrice"), 0) AS total_est_value,
+        COALESCE(SUM("totalPrimeCost"), 0) AS total_prime_cost
+      FROM public.estimations;
+    `),
+    pool.query(`
+      SELECT 
+        COUNT(*) AS total_leads,
+        COUNT(CASE WHEN LOWER(status) IN ('converted', 'won') THEN 1 END) AS converted_leads,
+        COALESCE(SUM(CASE WHEN budget ~ '^[0-9]+$' THEN budget::numeric ELSE 0 END), 0) AS total_pipeline_budget
+      FROM public."LeadEnquiry";
+    `),
+    pool.query(`
+      SELECT 
+        COUNT(*) AS total_jobs,
+        COUNT(CASE WHEN LOWER("currentStage") = 'quality check' OR LOWER("currentStage") = 'completed' THEN 1 END) AS completed_jobs,
+        COUNT(CASE WHEN LOWER("currentStage") != 'quality check' AND LOWER("currentStage") != 'completed' THEN 1 END) AS active_jobs
+      FROM public."ProductionJob";
+    `),
+  ]);
 
   const po = poRes.rows[0] || {};
   const quo = qRes.rows[0] || {};
@@ -195,54 +189,52 @@ async function getPurchaseReport(filters = {}) {
   const dateCond = buildDateCondition("po.order_date", timeRange, startDate, endDate, params);
   const where = dateCond ? `WHERE ${dateCond}` : "";
 
-  // Summary KPIs
-  const kpiRes = await pool.query(`
-    SELECT
-      COUNT(*) AS total_orders,
-      COALESCE(SUM(po.grand_total), 0) AS total_spend,
-      COALESCE(AVG(po.grand_total), 0) AS avg_order_value,
-      COALESCE(SUM(po.cgst_amount + po.sgst_amount + po.igst_amount), 0) AS total_gst_credit,
-      COUNT(CASE WHEN po.status = 'Pending' THEN 1 END) AS pending_count,
-      COUNT(CASE WHEN po.status = 'Ordered' THEN 1 END) AS ordered_count,
-      COUNT(CASE WHEN po.status = 'Received' THEN 1 END) AS received_count
-    FROM public.purchase_orders po
-    ${where};
-  `, params);
-
-  // Vendor Spend Ranking
-  const vendorSpendRes = await pool.query(`
-    SELECT 
-      po.vendor_company,
-      COUNT(*) AS order_count,
-      SUM(po.grand_total) AS total_spend,
-      MAX(po.order_date) AS last_order_date
-    FROM public.purchase_orders po
-    ${where}
-    GROUP BY po.vendor_company
-    ORDER BY total_spend DESC
-    LIMIT 6;
-  `, params);
-
-  // Detailed records list
-  const recordsRes = await pool.query(`
-    SELECT 
-      po.id,
-      po.po_no,
-      po.vendor_company,
-      po.vendor_name,
-      po.order_date,
-      po.expected_delivery_date,
-      po.status,
-      po.subtotal,
-      po.discount_amount,
-      (po.cgst_amount + po.sgst_amount + po.igst_amount) AS gst_total,
-      po.transport_charges,
-      po.grand_total,
-      (SELECT COUNT(*) FROM public.purchase_order_items poi WHERE poi.purchase_order_id = po.id) AS items_count
-    FROM public.purchase_orders po
-    ${where}
-    ORDER BY po.order_date DESC, po.created_at DESC;
-  `, params);
+  // Execute KPIs, Vendor spend ranking, and records concurrently
+  const [kpiRes, vendorSpendRes, recordsRes] = await Promise.all([
+    pool.query(`
+      SELECT
+        COUNT(*) AS total_orders,
+        COALESCE(SUM(po.grand_total), 0) AS total_spend,
+        COALESCE(AVG(po.grand_total), 0) AS avg_order_value,
+        COALESCE(SUM(po.cgst_amount + po.sgst_amount + po.igst_amount), 0) AS total_gst_credit,
+        COUNT(CASE WHEN po.status = 'Pending' THEN 1 END) AS pending_count,
+        COUNT(CASE WHEN po.status = 'Ordered' THEN 1 END) AS ordered_count,
+        COUNT(CASE WHEN po.status = 'Received' THEN 1 END) AS received_count
+      FROM public.purchase_orders po
+      ${where};
+    `, params),
+    pool.query(`
+      SELECT 
+        po.vendor_company,
+        COUNT(*) AS order_count,
+        SUM(po.grand_total) AS total_spend,
+        MAX(po.order_date) AS last_order_date
+      FROM public.purchase_orders po
+      ${where}
+      GROUP BY po.vendor_company
+      ORDER BY total_spend DESC
+      LIMIT 6;
+    `, params),
+    pool.query(`
+      SELECT 
+        po.id,
+        po.po_no,
+        po.vendor_company,
+        po.vendor_name,
+        po.order_date,
+        po.expected_delivery_date,
+        po.status,
+        po.subtotal,
+        po.discount_amount,
+        (po.cgst_amount + po.sgst_amount + po.igst_amount) AS gst_total,
+        po.transport_charges,
+        po.grand_total,
+        (SELECT COUNT(*) FROM public.purchase_order_items poi WHERE poi.purchase_order_id = po.id) AS items_count
+      FROM public.purchase_orders po
+      ${where}
+      ORDER BY po.order_date DESC, po.created_at DESC;
+    `, params),
+  ]);
 
   const kpis = kpiRes.rows[0] || {};
 
@@ -302,48 +294,46 @@ async function getPurchaseReport(filters = {}) {
  * 3. Vendors Module Report
  */
 async function getVendorsReport(_filters = {}) {
-  // Vendor statistics
-  const venSummaryRes = await pool.query(`
-    SELECT 
-      COUNT(*) AS total_vendors,
-      COUNT(CASE WHEN status = 'Active' OR status IS NULL THEN 1 END) AS active_vendors,
-      COUNT(CASE WHEN status = 'Inactive' THEN 1 END) AS inactive_vendors,
-      COUNT(DISTINCT category) AS total_categories,
-      COUNT(DISTINCT city) AS total_cities
-    FROM public."Vendor";
-  `);
-
-  // Category breakdown
-  const catRes = await pool.query(`
-    SELECT 
-      COALESCE(category, 'General') AS category,
-      COUNT(*) AS count
-    FROM public."Vendor"
-    GROUP BY category
-    ORDER BY count DESC;
-  `);
-
-  // Vendor list with transaction history from purchase_orders
-  const vendorsRes = await pool.query(`
-    SELECT 
-      v.id,
-      v.company,
-      v.name,
-      v.phone,
-      v.email,
-      v.category,
-      v.city,
-      v.state,
-      v.gstin,
-      v.status,
-      v."createdAt",
-      COALESCE(SUM(po.grand_total), 0) AS total_business,
-      COUNT(po.id) AS total_pos_issued
-    FROM public."Vendor" v
-    LEFT JOIN public.purchase_orders po ON LOWER(po.vendor_company) = LOWER(v.company)
-    GROUP BY v.id
-    ORDER BY total_business DESC, v.company ASC;
-  `);
+  // Execute vendor summary, category breakdown, and vendor history concurrently
+  const [venSummaryRes, catRes, vendorsRes] = await Promise.all([
+    pool.query(`
+      SELECT 
+        COUNT(*) AS total_vendors,
+        COUNT(CASE WHEN status = 'Active' OR status IS NULL THEN 1 END) AS active_vendors,
+        COUNT(CASE WHEN status = 'Inactive' THEN 1 END) AS inactive_vendors,
+        COUNT(DISTINCT category) AS total_categories,
+        COUNT(DISTINCT city) AS total_cities
+      FROM public."Vendor";
+    `),
+    pool.query(`
+      SELECT 
+        COALESCE(category, 'General') AS category,
+        COUNT(*) AS count
+      FROM public."Vendor"
+      GROUP BY category
+      ORDER BY count DESC;
+    `),
+    pool.query(`
+      SELECT 
+        v.id,
+        v.company,
+        v.name,
+        v.phone,
+        v.email,
+        v.category,
+        v.city,
+        v.state,
+        v.gstin,
+        v.status,
+        v."createdAt",
+        COALESCE(SUM(po.grand_total), 0) AS total_business,
+        COUNT(po.id) AS total_pos_issued
+      FROM public."Vendor" v
+      LEFT JOIN public.purchase_orders po ON LOWER(po.vendor_company) = LOWER(v.company)
+      GROUP BY v.id
+      ORDER BY total_business DESC, v.company ASC;
+    `),
+  ]);
 
   const summary = venSummaryRes.rows[0] || {};
 
@@ -406,37 +396,38 @@ async function getQuotationsReport(filters = {}) {
   const dateCond = buildDateCondition('"quotationDate"', timeRange, startDate, endDate, params);
   const where = dateCond ? `WHERE ${dateCond}` : "";
 
-  const kpiRes = await pool.query(`
-    SELECT 
-      COUNT(*) AS total_quotations,
-      COALESCE(SUM("grandTotal"), 0) AS total_value,
-      COALESCE(AVG("grandTotal"), 0) AS avg_value,
-      COALESCE(SUM("gstAmount"), 0) AS total_gst,
-      COUNT(CASE WHEN LOWER(status) = 'accepted' THEN 1 END) AS accepted_count,
-      COUNT(CASE WHEN LOWER(status) = 'sent' THEN 1 END) AS sent_count,
-      COUNT(CASE WHEN LOWER(status) = 'draft' THEN 1 END) AS draft_count,
-      COALESCE(SUM(CASE WHEN LOWER(status) = 'accepted' THEN "grandTotal" ELSE 0 END), 0) AS accepted_value
-    FROM public.quotations
-    ${where};
-  `, params);
-
-  const recordsRes = await pool.query(`
-    SELECT 
-      q.id,
-      q."quotationNo",
-      q."customerName",
-      q."projectName",
-      q."quotationDate",
-      q."validUntil",
-      q.status,
-      q.subtotal,
-      q."gstAmount",
-      q."grandTotal",
-      (SELECT COUNT(*) FROM public.quotation_items qi WHERE qi."quotationId" = q.id) AS items_count
-    FROM public.quotations q
-    ${where}
-    ORDER BY q."quotationDate" DESC, q."createdAt" DESC;
-  `, params);
+  const [kpiRes, recordsRes] = await Promise.all([
+    pool.query(`
+      SELECT 
+        COUNT(*) AS total_quotations,
+        COALESCE(SUM("grandTotal"), 0) AS total_value,
+        COALESCE(AVG("grandTotal"), 0) AS avg_value,
+        COALESCE(SUM("gstAmount"), 0) AS total_gst,
+        COUNT(CASE WHEN LOWER(status) = 'accepted' THEN 1 END) AS accepted_count,
+        COUNT(CASE WHEN LOWER(status) = 'sent' THEN 1 END) AS sent_count,
+        COUNT(CASE WHEN LOWER(status) = 'draft' THEN 1 END) AS draft_count,
+        COALESCE(SUM(CASE WHEN LOWER(status) = 'accepted' THEN "grandTotal" ELSE 0 END), 0) AS accepted_value
+      FROM public.quotations
+      ${where};
+    `, params),
+    pool.query(`
+      SELECT 
+        q.id,
+        q."quotationNo",
+        q."customerName",
+        q."projectName",
+        q."quotationDate",
+        q."validUntil",
+        q.status,
+        q.subtotal,
+        q."gstAmount",
+        q."grandTotal",
+        (SELECT COUNT(*) FROM public.quotation_items qi WHERE qi."quotationId" = q.id) AS items_count
+      FROM public.quotations q
+      ${where}
+      ORDER BY q."quotationDate" DESC, q."createdAt" DESC;
+    `, params),
+  ]);
 
   const kpis = kpiRes.rows[0] || {};
   const total = parseInt(kpis.total_quotations || 0, 10);
@@ -493,30 +484,31 @@ async function getQuotationsReport(filters = {}) {
  * 5. Estimation & BOQ Module Report
  */
 async function getEstimationsReport(_filters = {}) {
-  const kpiRes = await pool.query(`
-    SELECT 
-      COUNT(*) AS total_estimates,
-      COALESCE(SUM("totalSellingPrice"), 0) AS total_selling,
-      COALESCE(SUM("totalPrimeCost"), 0) AS total_cost,
-      COALESCE(AVG("markupPercent"), 0) AS avg_markup
-    FROM public.estimations;
-  `);
-
-  const recordsRes = await pool.query(`
-    SELECT 
-      e.id,
-      e."estimationNumber",
-      e."customerName",
-      e."projectName",
-      e."estimationDate",
-      e."totalPrimeCost",
-      e."totalSellingPrice",
-      e."pricingMethod",
-      e."markupPercent",
-      e.status
-    FROM public.estimations e
-    ORDER BY e."createdAt" DESC;
-  `);
+  const [kpiRes, recordsRes] = await Promise.all([
+    pool.query(`
+      SELECT 
+        COUNT(*) AS total_estimates,
+        COALESCE(SUM("totalSellingPrice"), 0) AS total_selling,
+        COALESCE(SUM("totalPrimeCost"), 0) AS total_cost,
+        COALESCE(AVG("markupPercent"), 0) AS avg_markup
+      FROM public.estimations;
+    `),
+    pool.query(`
+      SELECT 
+        e.id,
+        e."estimationNumber",
+        e."customerName",
+        e."projectName",
+        e."estimationDate",
+        e."totalPrimeCost",
+        e."totalSellingPrice",
+        e."pricingMethod",
+        e."markupPercent",
+        e.status
+      FROM public.estimations e
+      ORDER BY e."createdAt" DESC;
+    `),
+  ]);
 
   const kpis = kpiRes.rows[0] || {};
   const selling = parseFloat(kpis.total_selling || 0);
@@ -571,30 +563,31 @@ async function getEstimationsReport(_filters = {}) {
  * 6. CRM & Lead Enquiries Report
  */
 async function getLeadsReport(_filters = {}) {
-  const kpiRes = await pool.query(`
-    SELECT 
-      COUNT(*) AS total_leads,
-      COUNT(CASE WHEN LOWER(status) IN ('converted', 'won') THEN 1 END) AS converted_leads,
-      COUNT(CASE WHEN LOWER(status) IN ('new', 'enquiry') THEN 1 END) AS new_leads,
-      COUNT(CASE WHEN LOWER(status) IN ('follow-up', 'in progress', 'measurement') THEN 1 END) AS active_leads
-    FROM public."LeadEnquiry";
-  `);
-
-  const recordsRes = await pool.query(`
-    SELECT 
-      l.id,
-      l."customerName",
-      l."companyName",
-      l.phone,
-      l.email,
-      l.source,
-      l.requirement,
-      l.budget,
-      l.status,
-      l."createdAt"
-    FROM public."LeadEnquiry" l
-    ORDER BY l."createdAt" DESC;
-  `);
+  const [kpiRes, recordsRes] = await Promise.all([
+    pool.query(`
+      SELECT 
+        COUNT(*) AS total_leads,
+        COUNT(CASE WHEN LOWER(status) IN ('converted', 'won') THEN 1 END) AS converted_leads,
+        COUNT(CASE WHEN LOWER(status) IN ('new', 'enquiry') THEN 1 END) AS new_leads,
+        COUNT(CASE WHEN LOWER(status) IN ('follow-up', 'in progress', 'measurement') THEN 1 END) AS active_leads
+      FROM public."LeadEnquiry";
+    `),
+    pool.query(`
+      SELECT 
+        l.id,
+        l."customerName",
+        l."companyName",
+        l.phone,
+        l.email,
+        l.source,
+        l.requirement,
+        l.budget,
+        l.status,
+        l."createdAt"
+      FROM public."LeadEnquiry" l
+      ORDER BY l."createdAt" DESC;
+    `),
+  ]);
 
   const kpis = kpiRes.rows[0] || {};
   const total = parseInt(kpis.total_leads || 0, 10);
@@ -649,36 +642,36 @@ async function getLeadsReport(_filters = {}) {
  * 7. Production & Workshop Report
  */
 async function getProductionReport(_filters = {}) {
-  const kpiRes = await pool.query(`
-    SELECT 
-      COUNT(*) AS total_jobs,
-      COUNT(CASE WHEN LOWER("currentStage") = 'quality check' OR LOWER("currentStage") = 'completed' THEN 1 END) AS completed_jobs,
-      COUNT(CASE WHEN LOWER("currentStage") != 'quality check' AND LOWER("currentStage") != 'completed' THEN 1 END) AS active_jobs
-    FROM public."ProductionJob";
-  `);
-
-  const stageRes = await pool.query(`
-    SELECT 
-      "currentStage",
-      COUNT(*) AS count
-    FROM public."ProductionJob"
-    GROUP BY "currentStage"
-    ORDER BY count DESC;
-  `);
-
-  const recordsRes = await pool.query(`
-    SELECT 
-      pj.id,
-      pj."workOrderNo",
-      pj."productName",
-      pj.quantity,
-      pj."currentStage",
-      pj.department,
-      pj.deadline,
-      pj."createdAt"
-    FROM public."ProductionJob" pj
-    ORDER BY pj."createdAt" DESC;
-  `);
+  const [kpiRes, stageRes, recordsRes] = await Promise.all([
+    pool.query(`
+      SELECT 
+        COUNT(*) AS total_jobs,
+        COUNT(CASE WHEN LOWER("currentStage") = 'quality check' OR LOWER("currentStage") = 'completed' THEN 1 END) AS completed_jobs,
+        COUNT(CASE WHEN LOWER("currentStage") != 'quality check' AND LOWER("currentStage") != 'completed' THEN 1 END) AS active_jobs
+      FROM public."ProductionJob";
+    `),
+    pool.query(`
+      SELECT 
+        "currentStage",
+        COUNT(*) AS count
+      FROM public."ProductionJob"
+      GROUP BY "currentStage"
+      ORDER BY count DESC;
+    `),
+    pool.query(`
+      SELECT 
+        pj.id,
+        pj."workOrderNo",
+        pj."productName",
+        pj.quantity,
+        pj."currentStage",
+        pj.department,
+        pj.deadline,
+        pj."createdAt"
+      FROM public."ProductionJob" pj
+      ORDER BY pj."createdAt" DESC;
+    `),
+  ]);
 
   const kpis = kpiRes.rows[0] || {};
   const total = parseInt(kpis.total_jobs || 0, 10);
@@ -737,24 +730,24 @@ async function getProductionReport(_filters = {}) {
  * 8. Financial, GST & Tax Reconciliation Report
  */
 async function getFinancialReport(_filters = {}) {
-  // Input GST from Purchase
-  const poRes = await pool.query(`
-    SELECT 
-      COALESCE(SUM(grand_total), 0) AS total_spend,
-      COALESCE(SUM(cgst_amount), 0) AS input_cgst,
-      COALESCE(SUM(sgst_amount), 0) AS input_sgst,
-      COALESCE(SUM(igst_amount), 0) AS input_igst,
-      COALESCE(SUM(cgst_amount + sgst_amount + igst_amount), 0) AS total_itc
-    FROM public.purchase_orders;
-  `);
-
-  // Output GST from Quotations & Invoices
-  const quoRes = await pool.query(`
-    SELECT 
-      COALESCE(SUM("grandTotal"), 0) AS total_revenue,
-      COALESCE(SUM("gstAmount"), 0) AS output_gst
-    FROM public.quotations;
-  `);
+  // Execute purchase ITC and quotation output tax queries concurrently
+  const [poRes, quoRes] = await Promise.all([
+    pool.query(`
+      SELECT 
+        COALESCE(SUM(grand_total), 0) AS total_spend,
+        COALESCE(SUM(cgst_amount), 0) AS input_cgst,
+        COALESCE(SUM(sgst_amount), 0) AS input_sgst,
+        COALESCE(SUM(igst_amount), 0) AS input_igst,
+        COALESCE(SUM(cgst_amount + sgst_amount + igst_amount), 0) AS total_itc
+      FROM public.purchase_orders;
+    `),
+    pool.query(`
+      SELECT 
+        COALESCE(SUM("grandTotal"), 0) AS total_revenue,
+        COALESCE(SUM("gstAmount"), 0) AS output_gst
+      FROM public.quotations;
+    `),
+  ]);
 
   const po = poRes.rows[0] || {};
   const quo = quoRes.rows[0] || {};
@@ -857,14 +850,26 @@ function getInProgressModuleReport(moduleId, moduleLabel = "Module") {
  */
 async function getOperationsReport(_filters = {}) {
   try {
-    const kpiRes = await pool.query(`
-      SELECT 
-        COUNT(*) AS total_tasks,
-        COUNT(CASE WHEN LOWER(status) IN ('completed', 'done') THEN 1 END) AS completed_tasks,
-        COUNT(CASE WHEN LOWER(status) IN ('in progress', 'progress', 'ongoing') THEN 1 END) AS in_progress_tasks,
-        COUNT(CASE WHEN LOWER(priority) = 'high' THEN 1 END) AS high_priority
-      FROM public.operation_tasks;
-    `);
+    const [kpiRes, tasksRes] = await Promise.all([
+      pool.query(`
+        SELECT 
+          COUNT(*) AS total_tasks,
+          COUNT(CASE WHEN LOWER(status) IN ('completed', 'done') THEN 1 END) AS completed_tasks,
+          COUNT(CASE WHEN LOWER(status) IN ('in progress', 'progress', 'ongoing') THEN 1 END) AS in_progress_tasks,
+          COUNT(CASE WHEN LOWER(priority) = 'high' THEN 1 END) AS high_priority
+        FROM public.operation_tasks;
+      `),
+      pool.query(`
+        SELECT 
+          id, "taskId", workstream, "taskActivity", priority, status,
+          to_char("targetDate", 'YYYY-MM-DD') AS target_date,
+          employee
+        FROM public.operation_tasks
+        ORDER BY id DESC
+        LIMIT 100;
+      `),
+    ]);
+
     const kpi = kpiRes.rows[0] || {};
     const total = parseInt(kpi.total_tasks || 0, 10);
     const completed = parseInt(kpi.completed_tasks || 0, 10);
@@ -875,16 +880,6 @@ async function getOperationsReport(_filters = {}) {
     if (total === 0) {
       return getInProgressModuleReport("operations", "Operations");
     }
-
-    const tasksRes = await pool.query(`
-      SELECT 
-        id, "taskId", workstream, "taskActivity", priority, status,
-        to_char("targetDate", 'YYYY-MM-DD') AS target_date,
-        employee
-      FROM public.operation_tasks
-      ORDER BY id DESC
-      LIMIT 100;
-    `);
 
     return {
       module: "operations",
@@ -970,13 +965,24 @@ async function getProjectsReport(_filters = {}) {
  */
 async function getSalesOrdersReport(_filters = {}) {
   try {
-    const kpiRes = await pool.query(`
-      SELECT 
-        COUNT(*) AS total_orders,
-        COUNT(CASE WHEN LOWER(status) IN ('confirmed', 'active') THEN 1 END) AS confirmed_orders,
-        COALESCE(SUM("totalAmount"), 0) AS total_sales_value
-      FROM public.sales_orders;
-    `);
+    const [kpiRes, ordersRes] = await Promise.all([
+      pool.query(`
+        SELECT 
+          COUNT(*) AS total_orders,
+          COUNT(CASE WHEN LOWER(status) IN ('confirmed', 'active') THEN 1 END) AS confirmed_orders,
+          COALESCE(SUM("totalAmount"), 0) AS total_sales_value
+        FROM public.sales_orders;
+      `),
+      pool.query(`
+        SELECT 
+          id, "orderNo", "customerName", "projectName", status, "totalAmount",
+          to_char("orderDate", 'YYYY-MM-DD') AS order_date,
+          to_char("deliveryDate", 'YYYY-MM-DD') AS delivery_date
+        FROM public.sales_orders
+        ORDER BY id DESC;
+      `),
+    ]);
+
     const kpi = kpiRes.rows[0] || {};
     const total = parseInt(kpi.total_orders || 0, 10);
     const totalVal = parseFloat(kpi.total_sales_value || 0);
@@ -984,15 +990,6 @@ async function getSalesOrdersReport(_filters = {}) {
     if (total === 0) {
       return getInProgressModuleReport("sales_orders", "Sales Orders");
     }
-
-    const ordersRes = await pool.query(`
-      SELECT 
-        id, "orderNo", "customerName", "projectName", status, "totalAmount",
-        to_char("orderDate", 'YYYY-MM-DD') AS order_date,
-        to_char("deliveryDate", 'YYYY-MM-DD') AS delivery_date
-      FROM public.sales_orders
-      ORDER BY id DESC;
-    `);
 
     return {
       module: "sales_orders",
@@ -1027,13 +1024,24 @@ async function getSalesOrdersReport(_filters = {}) {
  */
 async function getWorkOrdersReport(_filters = {}) {
   try {
-    const kpiRes = await pool.query(`
-      SELECT 
-        COUNT(*) AS total_wo,
-        COUNT(CASE WHEN LOWER(status) IN ('completed', 'closed') THEN 1 END) AS completed_wo,
-        COUNT(CASE WHEN LOWER(status) NOT IN ('completed', 'closed', 'cancelled') THEN 1 END) AS active_wo
-      FROM public."WorkOrder";
-    `);
+    const [kpiRes, woRes] = await Promise.all([
+      pool.query(`
+        SELECT 
+          COUNT(*) AS total_wo,
+          COUNT(CASE WHEN LOWER(status) IN ('completed', 'closed') THEN 1 END) AS completed_wo,
+          COUNT(CASE WHEN LOWER(status) NOT IN ('completed', 'closed', 'cancelled') THEN 1 END) AS active_wo
+        FROM public."WorkOrder";
+      `),
+      pool.query(`
+        SELECT 
+          id, "workOrderNo", "customerName", "projectName", "productWork",
+          quantity, unit, status, priority,
+          to_char("dueDate", 'YYYY-MM-DD') AS due_date
+        FROM public."WorkOrder"
+        ORDER BY id DESC;
+      `),
+    ]);
+
     const kpi = kpiRes.rows[0] || {};
     const total = parseInt(kpi.total_wo || 0, 10);
     const active = parseInt(kpi.active_wo || 0, 10);
@@ -1041,15 +1049,6 @@ async function getWorkOrdersReport(_filters = {}) {
     if (total === 0) {
       return getInProgressModuleReport("work_orders", "Work Orders");
     }
-
-    const woRes = await pool.query(`
-      SELECT 
-        id, "workOrderNo", "customerName", "projectName", "productWork",
-        quantity, unit, status, priority,
-        to_char("dueDate", 'YYYY-MM-DD') AS due_date
-      FROM public."WorkOrder"
-      ORDER BY id DESC;
-    `);
 
     return {
       module: "work_orders",
@@ -1083,13 +1082,23 @@ async function getWorkOrdersReport(_filters = {}) {
  */
 async function getInventoryReport(_filters = {}) {
   try {
-    const kpiRes = await pool.query(`
-      SELECT 
-        COUNT(*) AS total_items,
-        COUNT(DISTINCT category) AS total_categories,
-        COALESCE(SUM(price), 0) AS total_catalog_value
-      FROM public."InventoryProduct";
-    `);
+    const [kpiRes, itemsRes] = await Promise.all([
+      pool.query(`
+        SELECT 
+          COUNT(*) AS total_items,
+          COUNT(DISTINCT category) AS total_categories,
+          COALESCE(SUM(price), 0) AS total_catalog_value
+        FROM public."InventoryProduct";
+      `),
+      pool.query(`
+        SELECT 
+          id, "srNo", "itemName", dimension, price, category
+        FROM public."InventoryProduct"
+        ORDER BY id DESC
+        LIMIT 100;
+      `),
+    ]);
+
     const kpi = kpiRes.rows[0] || {};
     const total = parseInt(kpi.total_items || 0, 10);
     const catCount = parseInt(kpi.total_categories || 0, 10);
@@ -1098,14 +1107,6 @@ async function getInventoryReport(_filters = {}) {
     if (total === 0) {
       return getInProgressModuleReport("inventory", "Inventory");
     }
-
-    const itemsRes = await pool.query(`
-      SELECT 
-        id, "srNo", "itemName", dimension, price, category
-      FROM public."InventoryProduct"
-      ORDER BY id DESC
-      LIMIT 100;
-    `);
 
     return {
       module: "inventory",
@@ -1138,29 +1139,31 @@ async function getInventoryReport(_filters = {}) {
  */
 async function getDispatchReport(_filters = {}) {
   try {
-    const kpiRes = await pool.query(`
-      SELECT 
-        COUNT(*) AS total_dispatches,
-        COUNT(CASE WHEN LOWER(status) IN ('delivered', 'completed') THEN 1 END) AS delivered_count,
-        COUNT(CASE WHEN LOWER(status) IN ('in transit', 'dispatched') THEN 1 END) AS in_transit_count
-      FROM public.dispatches;
-    `);
+    const [kpiRes, dispatchRes] = await Promise.all([
+      pool.query(`
+        SELECT 
+          COUNT(*) AS total_dispatches,
+          COUNT(CASE WHEN LOWER(status) IN ('delivered', 'completed') THEN 1 END) AS delivered_count,
+          COUNT(CASE WHEN LOWER(status) IN ('in transit', 'dispatched') THEN 1 END) AS in_transit_count
+        FROM public.dispatches;
+      `),
+      pool.query(`
+        SELECT 
+          id, "dispatchNo", "customerName", "projectName", transporter,
+          "challanNo", status,
+          to_char("dispatchDate", 'YYYY-MM-DD') AS dispatch_date,
+          to_char("expectedDelivery", 'YYYY-MM-DD') AS expected_date
+        FROM public.dispatches
+        ORDER BY id DESC;
+      `),
+    ]);
+
     const kpi = kpiRes.rows[0] || {};
     const total = parseInt(kpi.total_dispatches || 0, 10);
 
     if (total === 0) {
       return getInProgressModuleReport("dispatch", "Dispatch & Delivery");
     }
-
-    const dispatchRes = await pool.query(`
-      SELECT 
-        id, "dispatchNo", "customerName", "projectName", transporter,
-        "challanNo", status,
-        to_char("dispatchDate", 'YYYY-MM-DD') AS dispatch_date,
-        to_char("expectedDelivery", 'YYYY-MM-DD') AS expected_date
-      FROM public.dispatches
-      ORDER BY id DESC;
-    `);
 
     return {
       module: "dispatch",
@@ -1195,27 +1198,29 @@ async function getDispatchReport(_filters = {}) {
  */
 async function getInstallationReport(_filters = {}) {
   try {
-    const kpiRes = await pool.query(`
-      SELECT 
-        COUNT(*) AS total_installs,
-        COUNT(CASE WHEN LOWER(status) IN ('completed', 'signed off') THEN 1 END) AS completed_installs
-      FROM public.installations;
-    `);
+    const [kpiRes, instRes] = await Promise.all([
+      pool.query(`
+        SELECT 
+          COUNT(*) AS total_installs,
+          COUNT(CASE WHEN LOWER(status) IN ('completed', 'signed off') THEN 1 END) AS completed_installs
+        FROM public.installations;
+      `),
+      pool.query(`
+        SELECT 
+          id, "installationNo", "customerName", "projectName", "installerName",
+          status,
+          to_char("scheduledDate", 'YYYY-MM-DD') AS scheduled_date
+        FROM public.installations
+        ORDER BY id DESC;
+      `),
+    ]);
+
     const kpi = kpiRes.rows[0] || {};
     const total = parseInt(kpi.total_installs || 0, 10);
 
     if (total === 0) {
       return getInProgressModuleReport("installation", "Installation");
     }
-
-    const instRes = await pool.query(`
-      SELECT 
-        id, "installationNo", "customerName", "projectName", "installerName",
-        status,
-        to_char("scheduledDate", 'YYYY-MM-DD') AS scheduled_date
-      FROM public.installations
-      ORDER BY id DESC;
-    `);
 
     return {
       module: "installation",
@@ -1249,13 +1254,23 @@ async function getInstallationReport(_filters = {}) {
  */
 async function getInvoicingReport(_filters = {}) {
   try {
-    const kpiRes = await pool.query(`
-      SELECT 
-        COUNT(*) AS total_invoices,
-        COALESCE(SUM(CAST("grandTotal" AS NUMERIC)), 0) AS total_billed,
-        COALESCE(SUM(CAST(balance AS NUMERIC)), 0) AS total_balance
-      FROM public."Invoice";
-    `);
+    const [kpiRes, invRes] = await Promise.all([
+      pool.query(`
+        SELECT 
+          COUNT(*) AS total_invoices,
+          COALESCE(SUM(CAST("grandTotal" AS NUMERIC)), 0) AS total_billed,
+          COALESCE(SUM(CAST(balance AS NUMERIC)), 0) AS total_balance
+        FROM public."Invoice";
+      `),
+      pool.query(`
+        SELECT 
+          id, "invoiceNo", "billToName", "grandTotal", taxable, balance, status,
+          "invoiceDate" AS invoice_date
+        FROM public."Invoice"
+        ORDER BY "createdAt" DESC;
+      `),
+    ]);
+
     const kpi = kpiRes.rows[0] || {};
     const total = parseInt(kpi.total_invoices || 0, 10);
     const totalBilled = parseFloat(kpi.total_billed || 0);
@@ -1264,14 +1279,6 @@ async function getInvoicingReport(_filters = {}) {
     if (total === 0) {
       return getInProgressModuleReport("invoicing", "Invoicing");
     }
-
-    const invRes = await pool.query(`
-      SELECT 
-        id, "invoiceNo", "billToName", "grandTotal", taxable, balance, status,
-        "invoiceDate" AS invoice_date
-      FROM public."Invoice"
-      ORDER BY "createdAt" DESC;
-    `);
 
     return {
       module: "invoicing",
@@ -1300,6 +1307,67 @@ async function getInvoicingReport(_filters = {}) {
   }
 }
 
+/**
+ * Masters (Product Master) module report
+ */
+async function getMastersReport(_filters = {}) {
+  try {
+    const [kpiRes, prodRes] = await Promise.all([
+      pool.query(`
+        SELECT 
+          COUNT(*) AS total_products,
+          COUNT(CASE WHEN status = 'Active' THEN 1 END) AS active_products,
+          COUNT(DISTINCT category) AS total_categories,
+          COALESCE(AVG(price), 0) AS avg_price,
+          COALESCE(SUM(price), 0) AS total_catalog_value
+        FROM public.products;
+      `),
+      pool.query(`
+        SELECT 
+          id, name, code, sku, category, unit, price, status,
+          to_char(created_at, 'YYYY-MM-DD') AS created_date
+        FROM public.products
+        ORDER BY created_at DESC;
+      `),
+    ]);
+
+    const kpi = kpiRes.rows[0] || {};
+    const total = parseInt(kpi.total_products || 0, 10);
+    const active = parseInt(kpi.active_products || 0, 10);
+    const catCount = parseInt(kpi.total_categories || 0, 10);
+    const avgPrice = Math.round(parseFloat(kpi.avg_price || 0));
+
+    if (total === 0) {
+      return getInProgressModuleReport("masters", "Masters");
+    }
+
+    return {
+      module: "masters",
+      title: "Product Master & Catalog Intelligence",
+      description: "Finished furniture catalog offerings, SKU classification, unit pricing, and active lines.",
+      isInProgress: false,
+      kpis: [
+        { label: "Catalog Offerings", value: total, change: `${active} active products`, color: "blue" },
+        { label: "Product Categories", value: catCount, change: "Furniture lines", color: "purple" },
+        { label: "Average Unit Price", value: `₹${avgPrice.toLocaleString("en-IN")}`, change: "Catalog average", color: "emerald" },
+        { label: "Active Ratio", value: total > 0 ? `${Math.round((active / total) * 100)}%` : "100%", change: "Available for quote", color: "amber" }
+      ],
+      records: prodRes.rows.map((p) => ({
+        id: p.id,
+        code: p.sku || p.code,
+        name: p.name,
+        secondary: `Unit: ${p.unit || "NOS"} | SKU: ${p.sku || p.code}`,
+        category: p.category,
+        date: p.created_date,
+        status: p.status || "Active",
+        amount: parseFloat(p.price || 0)
+      }))
+    };
+  } catch {
+    return getInProgressModuleReport("masters", "Masters");
+  }
+}
+
 module.exports = {
   getExecutiveOverview,
   getPurchaseReport,
@@ -1317,5 +1385,6 @@ module.exports = {
   getDispatchReport,
   getInstallationReport,
   getInvoicingReport,
+  getMastersReport,
   getInProgressModuleReport
 };
