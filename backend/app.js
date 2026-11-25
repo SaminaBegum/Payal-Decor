@@ -5,7 +5,6 @@ const rateLimit = require("express-rate-limit");
 const corsOptions = require("./config/cors");
 
 // Import routes
-const authRoutes = require("./routes/authRoutes");
 const crmRoutes = require("./routes/crmRoutes");
 const estimationRoutes = require("./routes/estimationRoutes");
 const bomRoutes = require("./routes/bomRoutes");
