@@ -1,4 +1,4 @@
-const express = require("express");
+﻿const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
@@ -42,6 +42,11 @@ const authLimiter = rateLimit({
   },
 });
 
+// Import authentication routes
+const authRoutes = require("./routes/authRoutes");
+const operationsRoutes = require("./routes/operationsRoutes");
+const employeeRoutes = require("./routes/employeeRoutes");
+const attendanceRoutes = require("./routes/attendanceRoutes");
 // General rate limiter for all API endpoints
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -78,6 +83,14 @@ app.use(
   },
   authRoutes
 );
+
+app.use("/api/operations", operationsRoutes);
+app.use("/api/employees", employeeRoutes);
+app.use("/api/attendance", attendanceRoutes);
+
+module.exports = app;
+
+
 
 // CRM routes
 app.use("/api/crm", crmRoutes);

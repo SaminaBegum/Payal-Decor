@@ -1,10 +1,13 @@
 
 const {
   findUserByEmail,
+  findUserPasswordById,
+  updateUserPassword,
 } = require("../models/userModel");
 
 const {
   comparePassword,
+  hashPassword,
 } = require("../utils/passwordUtils");
 
 const generateToken = require("../utils/generateToken");
@@ -14,7 +17,6 @@ const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Validate required fields
     if (
       typeof email !== "string" ||
       typeof password !== "string" ||
@@ -27,7 +29,6 @@ const login = async (req, res) => {
       });
     }
 
-    // Find user in PostgreSQL
     const user = await findUserByEmail(email);
 
     if (!user) {
@@ -37,7 +38,6 @@ const login = async (req, res) => {
       });
     }
 
-    // Check account status
     if (!user.is_active) {
       return res.status(403).json({
         success: false,
@@ -45,7 +45,6 @@ const login = async (req, res) => {
       });
     }
 
-    // Verify password
     const isPasswordValid = await comparePassword(
       password,
       user.password_hash
@@ -58,10 +57,8 @@ const login = async (req, res) => {
       });
     }
 
-    // Generate JWT
     const token = generateToken(user);
 
-    // Return user details without password hash
     return res.status(200).json({
       success: true,
       message: "Login successful",
@@ -72,6 +69,7 @@ const login = async (req, res) => {
         email: user.email,
         role: user.role,
         department: user.department,
+        mustChangePassword: user.must_change_password,
       },
     });
   } catch (error) {
@@ -84,6 +82,88 @@ const login = async (req, res) => {
   }
 };
 
+// Change password for authenticated user
+const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body || {};
+
+    if (
+      typeof currentPassword !== "string" ||
+      typeof newPassword !== "string" ||
+      !currentPassword ||
+      !newPassword
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Current password and new password are required",
+      });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: "New password must be at least 8 characters long",
+      });
+    }
+
+    if (currentPassword === newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "New password must be different from the current password",
+      });
+    }
+
+    const user = await findUserPasswordById(req.user.id);
+
+    if (!user || !user.is_active) {
+      return res.status(401).json({
+        success: false,
+        message: "User account is invalid or inactive",
+      });
+    }
+
+    const isCurrentPasswordValid = await comparePassword(
+      currentPassword,
+      user.password_hash
+    );
+
+    if (!isCurrentPasswordValid) {
+      return res.status(400).json({
+        success: false,
+        message: "Current password is incorrect",
+      });
+    }
+
+    const passwordHash = await hashPassword(newPassword);
+
+    const updatedUser = await updateUserPassword(
+      req.user.id,
+      passwordHash
+    );
+
+    if (!updatedUser) {
+      return res.status(400).json({
+        success: false,
+        message: "Password could not be updated. Please try again.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Password changed successfully",
+      user: updatedUser,
+    });
+  } catch (error) {
+    console.error("Change password error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Password change failed due to a server error",
+    });
+  }
+};
+
 module.exports = {
   login,
+  changePassword,
 };
