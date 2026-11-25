@@ -388,6 +388,17 @@ const deleteLead = async (id) => {
   return result.rows[0] || null;
 };
 
+const isCorruptedString = (str) => {
+  if (!str || typeof str !== "string") return false;
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i);
+    if ((code < 32 && code !== 9 && code !== 10 && code !== 13) || code === 65533) {
+      return true;
+    }
+  }
+  return false;
+};
+
 /**
  * Bulk sync leads into crm table (upsert)
  */
@@ -402,6 +413,11 @@ const syncLeads = async (leadsArray = []) => {
     const id = lead.id || `crm-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
     const source = lead.source || "Meta";
     const businessName = lead.businessName ? lead.businessName.trim() : null;
+
+    // Reject corrupted or binary-garbled entries
+    if (isCorruptedString(businessName)) {
+      continue;
+    }
     const category = lead.category ? lead.category.trim() : null;
     const genderType = lead.genderType ? lead.genderType.trim() : null;
     const primaryPhone = lead.primaryPhone ? lead.primaryPhone.trim() : null;
