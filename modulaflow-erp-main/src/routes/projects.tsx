@@ -41,6 +41,7 @@ interface CustomerOption {
 interface ProjectForm {
   name: string;
   customerId: string;
+  customerName: string;
   site: string;
   projectLead: string;
   measuredArea: string;
@@ -54,6 +55,7 @@ interface ProjectForm {
 const emptyForm: ProjectForm = {
   name: "",
   customerId: "",
+  customerName: "",
   site: "",
   projectLead: "",
   measuredArea: "",
@@ -114,23 +116,26 @@ function ProjectsPage() {
     setLoading(true);
     setError("");
 
+    // Projects load first. They must show even if CRM customers are not available.
     try {
-      const [projectRes, customerRes] = await Promise.all([
-        fetch(`${API_BASE}/projects`),
-        fetch(`${API_BASE}/crm/customers`),
-      ]);
-
+      const projectRes = await fetch(`${API_BASE}/projects`);
       const projectData = await readResponse(projectRes);
-      const customerData = await readResponse(customerRes);
-
       setProjects(projectData.projects ?? []);
-      setCustomers(customerData.customers ?? []);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to load projects.",
       );
     } finally {
       setLoading(false);
+    }
+
+    // CRM customers are optional. If the API is missing, the form uses a text box.
+    try {
+      const customerRes = await fetch(`${API_BASE}/crm/customers`);
+      const customerData = await readResponse(customerRes);
+      setCustomers(customerData.customers ?? []);
+    } catch {
+      setCustomers([]);
     }
   }, []);
 
@@ -179,6 +184,7 @@ function ProjectsPage() {
     setForm({
       name: project.name ?? "",
       customerId: project.customerId ?? "",
+      customerName: project.customerName ?? "",
       site: project.site ?? "",
       projectLead: project.projectLead ?? "",
       measuredArea: project.measuredArea ?? "",
@@ -215,6 +221,9 @@ function ProjectsPage() {
         body: JSON.stringify({
           name: form.name,
           customerId: form.customerId,
+          customerName:
+            customers.find((c) => c.id === form.customerId)?.name ||
+            form.customerName,
           site: form.site,
           projectLead: form.projectLead,
           measuredArea: form.measuredArea,
@@ -464,21 +473,33 @@ function ProjectsPage() {
                 </label>
 
                 <label className="space-y-1 text-sm">
-                  <span>Customer (from CRM) *</span>
-                  <select
-                    className={inputClass}
-                    required
-                    value={form.customerId}
-                    onChange={(e) => updateField("customerId", e.target.value)}
-                  >
-                    <option value="">Select customer</option>
-                    {customers.map((customer) => (
-                      <option key={customer.id} value={customer.id}>
-                        {customer.name}
-                        {customer.company ? ` — ${customer.company}` : ""}
-                      </option>
-                    ))}
-                  </select>
+                  <span>Customer *</span>
+                  {customers.length > 0 ? (
+                    <select
+                      className={inputClass}
+                      required
+                      value={form.customerId}
+                      onChange={(e) => updateField("customerId", e.target.value)}
+                    >
+                      <option value="">Select customer</option>
+                      {customers.map((customer) => (
+                        <option key={customer.id} value={customer.id}>
+                          {customer.name}
+                          {customer.company ? ` — ${customer.company}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      className={inputClass}
+                      required
+                      placeholder="Customer name"
+                      value={form.customerName}
+                      onChange={(e) =>
+                        updateField("customerName", e.target.value)
+                      }
+                    />
+                  )}
                 </label>
 
                 <label className="space-y-1 text-sm">
