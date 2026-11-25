@@ -1,4 +1,4 @@
-
+﻿
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -75,7 +75,7 @@ function LoginPage() {
 
      // Redirect users according to their authenticated role.
 if (loginRole === "Employee") {
-  navigate("/operations", { replace: true });
+  navigate("/employee-dashboard", { replace: true });
 } else {
   navigate("/", { replace: true });
 }
@@ -243,3 +243,4 @@ if (loginRole === "Employee") {
 }
 
 export default LoginPage;
+

@@ -11,18 +11,18 @@ const findUserByEmail = async (email) => {
       password_hash,
       role,
       department,
-      is_active
+      is_active,
+      must_change_password
     FROM public.users
     WHERE LOWER(email) = LOWER($1)
     LIMIT 1
   `;
 
   const result = await pool.query(query, [email.trim()]);
-
   return result.rows[0] || null;
 };
 
-// Find a user by ID (without exposing the password hash)
+// Find a user by ID without exposing the password hash
 const findUserById = async (id) => {
   const query = `
     SELECT
@@ -40,7 +40,42 @@ const findUserById = async (id) => {
   `;
 
   const result = await pool.query(query, [id]);
+  return result.rows[0] || null;
+};
 
+// Find a user's password hash for authenticated password verification
+const findUserPasswordById = async (id) => {
+  const query = `
+    SELECT id, password_hash, is_active
+    FROM public.users
+    WHERE id = $1
+    LIMIT 1
+  `;
+
+  const result = await pool.query(query, [id]);
+  return result.rows[0] || null;
+};
+
+// Update password and clear the mandatory password-change flag
+const updateUserPassword = async (id, passwordHash) => {
+  const query = `
+    UPDATE public.users
+    SET
+      password_hash = $2,
+      must_change_password = FALSE,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = $1
+      AND is_active = TRUE
+    RETURNING
+      id,
+      full_name,
+      email,
+      role,
+      department,
+      must_change_password
+  `;
+
+  const result = await pool.query(query, [id, passwordHash]);
   return result.rows[0] || null;
 };
 
@@ -81,12 +116,13 @@ const createUser = async ({
   ];
 
   const result = await pool.query(query, values);
-
   return result.rows[0];
 };
 
 module.exports = {
   findUserByEmail,
   findUserById,
+  findUserPasswordById,
+  updateUserPassword,
   createUser,
 };

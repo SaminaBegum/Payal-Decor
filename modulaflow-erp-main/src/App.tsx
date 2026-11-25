@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+﻿import { useMemo } from "react";
 import {
   BrowserRouter,
   Navigate,
@@ -12,7 +12,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 
 import i18n from "./i18n";
-import { isLoggedIn } from "./lib/auth";
+import { getCurrentUser, isLoggedIn } from "./lib/auth";
 
 import Dashboard from "./routes/index";
 import LoginPage from "./routes/login";
@@ -47,6 +47,7 @@ import SalesOrdersPage from "./routes/sales-orders";
 import SiteVisitMeasurementPage from "./routes/site-visit-measurement";
 import VendorsPage from "./routes/vendors";
 import WorkOrdersPage from "./routes/work-orders";
+import EmployeeDashboardPage from "./routes/employee-dashboard";
 
 function RequireAuth() {
   const location = useLocation();
@@ -57,8 +58,34 @@ function RequireAuth() {
   );
 }
 
+function RequireEmployee() {
+  return getCurrentUser()?.role === "Employee" ? (
+    <Outlet />
+  ) : (
+    <Navigate to="/" replace />
+  );
+}
+
+function RequireNonEmployee() {
+  return getCurrentUser()?.role === "Employee" ? (
+    <Navigate to="/employee-dashboard" replace />
+  ) : (
+    <Outlet />
+  );
+}
+
 function LoginRoute() {
-  return isLoggedIn() ? <Navigate to="/" replace /> : <LoginPage />;
+  if (!isLoggedIn()) {
+    return <LoginPage />;
+  }
+
+  const user = getCurrentUser();
+
+  if (user?.role === "Employee") {
+    return <Navigate to="/employee-dashboard" replace />;
+  }
+
+  return <Navigate to="/" replace />;
 }
 
 function NotFound() {
@@ -87,6 +114,10 @@ function AppRoutes() {
       <Route path="/login" element={<LoginRoute />} />
 
       <Route element={<RequireAuth />}>
+        <Route element={<RequireEmployee />}>
+          <Route path="/employee-dashboard" element={<EmployeeDashboardPage />} />
+        </Route>
+        <Route element={<RequireNonEmployee />}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/accounts" element={<Accounts />} />
         <Route path="/crm" element={<CRMPage />} />
@@ -122,6 +153,7 @@ function AppRoutes() {
           <Route path="system-settings" element={<AdminSystemSettings />} />
           <Route path="users" element={<AdminUsers />} />
         </Route>
+        </Route>
       </Route>
 
       <Route path="*" element={<NotFound />} />
@@ -151,3 +183,4 @@ export default function App() {
     </I18nextProvider>
   );
 }
+
