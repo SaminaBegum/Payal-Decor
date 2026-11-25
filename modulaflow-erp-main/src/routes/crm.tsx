@@ -59,7 +59,7 @@ async function apiFetch(endpoint: string, options: RequestInit = {}): Promise<Re
   }
 }
 
-const STORAGE_KEY = "payal_decor_crm_leads_v3";
+const STORAGE_KEY = "payal_decor_crm_leads_v4";
 
 /**
  * Generates direct Gmail Web Compose URL with user-specified Cold Email template
@@ -173,6 +173,17 @@ export const SOURCE_OPTIONS = [
   "Other",
 ];
 
+function isGarbledText(str?: string): boolean {
+  if (!str) return false;
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i);
+    if ((code < 32 && code !== 9 && code !== 10 && code !== 13) || code === 65533) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function CRMPage() {
   const [leads, setLeads] = useState<CRMLead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -238,29 +249,31 @@ function CRMPage() {
     setLoading(true);
     let currentData = [...INITIAL_CRM_RECORDS];
 
-    // 1. Load from local database cache (immediate offline & speed guarantee)
+    // Clean up any stale or corrupted storage keys
     try {
+      localStorage.removeItem("payal_decor_crm_leads_v3");
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          const existingNames = new Set(
-            parsed.map((r: CRMLead) => (r.businessName || "").toLowerCase().trim()).filter(Boolean)
+          // Keep only non-corrupted leads
+          const valid = parsed.filter(
+            (r: CRMLead) =>
+              r &&
+              typeof r.id === "string" &&
+              !r.id.startsWith("crm-1795595564") &&
+              !isGarbledText(r.businessName)
           );
-          const missing = INITIAL_CRM_RECORDS.filter(
-            (r) => !existingNames.has((r.businessName || "").toLowerCase().trim())
-          );
-          currentData = [...parsed, ...missing].map((item) => ({
-            ...item,
-            source: item.source || "Meta",
-          }));
+          if (valid.length > 0) {
+            currentData = valid;
+          }
         }
       }
     } catch {
       // ignore
     }
 
-    // 2. Query Central Database API (PostgreSQL / Express at http://localhost:5000)
+    // Query Central Database API (PostgreSQL / Express at http://localhost:5000)
     try {
       const res = await apiFetch("/crm/leads", {
         headers: { Accept: "application/json" },
@@ -276,48 +289,20 @@ function CRMPage() {
           : null;
 
         if (serverLeads && serverLeads.length > 0) {
-          const serverIdSet = new Set(serverLeads.map((s: CRMLead) => s.id));
-          // Identify any pending local leads that haven't been saved to PostgreSQL yet
-          const localPending = currentData.filter((c: CRMLead) => !serverIdSet.has(c.id));
+          // Filter out corrupted leads if any exist on server
+          const validServerLeads = serverLeads.filter(
+            (s: CRMLead) =>
+              s &&
+              typeof s.id === "string" &&
+              !s.id.startsWith("crm-1795595564") &&
+              !isGarbledText(s.businessName)
+          );
 
-          if (localPending.length > 0) {
-            // Automatically sync pending local leads into PostgreSQL
-            try {
-              await apiFetch("/crm/leads/sync", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ leads: localPending }),
-              });
-              // Reload fresh data from PostgreSQL database
-              const freshRes = await apiFetch("/crm/leads");
-              if (freshRes.ok) {
-                const freshData = await freshRes.json();
-                const freshList = freshData.leads || freshData.data || freshData;
-                if (Array.isArray(freshList)) {
-                  currentData = freshList.map((s: CRMLead) => ({
-                    ...s,
-                    businessName: s.businessName || s.id || "Untitled Lead",
-                    source: s.source || "Meta",
-                  }));
-                }
-              }
-            } catch {
-              currentData = [
-                ...localPending,
-                ...serverLeads.map((s: CRMLead) => ({
-                  ...s,
-                  businessName: s.businessName || s.id || "Untitled Lead",
-                  source: s.source || "Meta",
-                })),
-              ];
-            }
-          } else {
-            currentData = serverLeads.map((s: CRMLead) => ({
-              ...s,
-              businessName: s.businessName || s.id || "Untitled Lead",
-              source: s.source || "Meta",
-            }));
-          }
+          currentData = validServerLeads.map((s: CRMLead) => ({
+            ...s,
+            businessName: s.businessName || s.id || "Untitled Lead",
+            source: s.source || "Meta",
+          }));
 
           setDbStatus("connected");
           setLastSyncTime(new Date().toLocaleTimeString());

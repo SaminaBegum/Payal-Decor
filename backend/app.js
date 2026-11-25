@@ -17,7 +17,9 @@ const quotationRoutes = require("./routes/quotationRoutes");
 const vendorRoutes = require("./routes/vendorRoutes");
 const workOrderRoutes = require("./routes/workOrderRoutes");
 const purchaseRoutes = require("./routes/purchaseRoutes");
+const reportsRoutes = require("./routes/reportsRoutes");
 const installationRoutes = require("./routes/installationRoutes");
+const productRoutes = require("./routes/productRoutes");
 
 const app = express();
 
@@ -43,7 +45,6 @@ const authLimiter = rateLimit({
 });
 
 // Import authentication routes
-const authRoutes = require("./routes/authRoutes");
 const operationsRoutes = require("./routes/operationsRoutes");
 const employeeRoutes = require("./routes/employeeRoutes");
 const attendanceRoutes = require("./routes/attendanceRoutes");
@@ -88,10 +89,6 @@ app.use("/api/operations", operationsRoutes);
 app.use("/api/employees", employeeRoutes);
 app.use("/api/attendance", attendanceRoutes);
 
-module.exports = app;
-
-
-
 // CRM routes
 app.use("/api/crm", crmRoutes);
 
@@ -133,5 +130,13 @@ app.use("/api/installations", installationRoutes);
 app.use("/api/purchase", purchaseRoutes);
 app.use("/purchase", purchaseRoutes);
 app.use("/api/purchase-orders", purchaseRoutes);
+
+// Business Intelligence & Reports routes
+app.use("/api/reports", reportsRoutes);
+app.use("/reports", reportsRoutes);
+
+// Master Products routes
+app.use("/api/products", productRoutes);
+app.use("/products", productRoutes);
 
 module.exports = app;
