@@ -20,6 +20,7 @@ const purchaseRoutes = require("./routes/purchaseRoutes");
 const reportsRoutes = require("./routes/reportsRoutes");
 const installationRoutes = require("./routes/installationRoutes");
 const projectRoutes = require("./routes/projectRoutes");
+const dispatchRoutes = require("./routes/dispatchRoutes");
 const productRoutes = require("./routes/productRoutes");
 
 const app = express();
@@ -129,6 +130,8 @@ app.use("/api/installations", installationRoutes);
 
 // Project routes
 app.use("/api/projects", projectRoutes);
+// Dispatch & Delivery routes
+app.use("/api/dispatches", dispatchRoutes);
 
 // Purchase Order routes
 app.use("/api/purchase", purchaseRoutes);

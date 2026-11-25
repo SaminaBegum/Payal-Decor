@@ -117,7 +117,15 @@ async function fetchList<T>(path: string, key: string): Promise<T[]> {
   try {
     const response = await fetch(`${API_BASE}${path}`);
     const data = await readResponse(response);
-    return Array.isArray(data) ? data : (data[key] ?? []);
+
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data[key])) return data[key];
+
+    // key जुळली नाही तर response मधला पहिला array वापर
+    const firstArray = Object.values(data).find((value) =>
+      Array.isArray(value),
+    );
+    return (firstArray as T[]) ?? [];
   } catch {
     return [];
   }
