@@ -117,7 +117,7 @@ const SEED_PRODUCTS: Product[] = GROUPS.flatMap((g) =>
 
 const PRODUCTS_KEY = "payal-erp-products";
 const OLD_IMAGE_KEY = "payal-erp-product-images"; // earlier version (images by Sr.No)
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5001/api";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 const EMPTY_FORM = {
   srNo: "",

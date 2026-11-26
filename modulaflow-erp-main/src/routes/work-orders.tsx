@@ -1,150 +1,205 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+// work-orders.tsx
 import {
-  Plus, Search, Pencil, Trash2, X, RefreshCw, Eye,
+  Plus,
+  Search,
+  Pencil,
+  Trash2,
+  X,
+  RefreshCw,
+  Eye,
 } from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { AppShell } from "@/components/erp/AppShell";
 
-const API = (
-  import.meta.env.VITE_API_URL || "http://localhost:5001/api"
+const API_BASE = (
+  import.meta.env.VITE_API_URL || "http://localhost:5000/api"
 ).replace(/\/+$/, "");
 
-const STATUSES = [
-  "Draft", "Approved", "In Production", "Completed", "Cancelled",
-];
-const PRIORITIES = ["Low", "Medium", "High", "Urgent"];
+interface WorkOrderItem {
+  itemName: string;
+  description?: string;
+  quantity: number;
+  unit: string;
+}
 
 interface WorkOrder {
   id: string;
   workOrderNo: string;
   salesOrderId?: string | null;
-  customerId?: string | null;
+  salesOrderNo?: string | null;
   customerName: string;
   projectName: string;
-  productWork: string;
-  quantity: number;
-  unit: string;
-  dueDate?: string | null;
-  assignedTeam?: string | null;
+  startDate: string;
+  dueDate: string;
   priority: string;
   status: string;
-  notes?: string | null;
+  notes: string;
+  items: WorkOrderItem[];
+  createdAt?: string;
 }
 
-interface SalesOrder {
+interface SalesOrderLite {
   id: string;
-  orderNo?: string;
-  salesOrderNo?: string;
-  customerId?: string | null;
-  customerName?: string;
-  projectName?: string;
-  status?: string;
+  salesOrderNo: string;
+  customerName: string;
+  projectName: string;
+  deliveryDate: string;
+  items: WorkOrderItem[];
 }
 
-const blank = {
-  salesOrderId: "",
-  customerId: "",
-  customerName: "",
-  projectName: "",
-  productWork: "",
-  quantity: "1",
-  unit: "Nos",
-  dueDate: "",
-  assignedTeam: "",
-  priority: "Medium",
-  status: "Draft",
-  notes: "",
-};
+const STATUS_OPTIONS = [
+  "Draft",
+  "Approved",
+  "In Production",
+  "On Hold",
+  "Completed",
+  "Cancelled",
+];
 
-async function responseData(response: Response) {
+const PRIORITY_OPTIONS = ["Low", "Medium", "High"];
+
+const inputClass =
+  "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
+
+const today = () => new Date().toISOString().slice(0, 10);
+
+function createWorkOrderNumber() {
+  return `WO-${Date.now().toString().slice(-8)}`;
+}
+
+async function parseResponse(response: Response) {
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok || data.success === false) {
     throw new Error(
-      data.message || `Request failed (${response.status})`
+      data.message || `Request failed (${response.status})`,
     );
   }
 
   return data;
 }
 
-function arrayFrom<T>(data: any, keys: string[]): T[] {
+function getList<T>(data: any, keys: string[]): T[] {
   if (Array.isArray(data)) return data;
 
   for (const key of keys) {
-    if (Array.isArray(data?.[key])) return data[key];
+    if (Array.isArray(data?.[key])) {
+      return data[key] as T[];
+    }
   }
 
   return [];
 }
 
-function cleanWorkOrder(row: any): WorkOrder {
-  return {
-    ...row,
-    id: String(row.id),
-    workOrderNo: row.workOrderNo || "WO",
-    salesOrderId: row.salesOrderId ?? null,
-    customerId: row.customerId ?? row.customer?.id ?? null,
-    customerName: row.customerName ?? row.customer?.name ?? "",
-    projectName: row.projectName ?? "",
-    productWork: row.productWork ?? "",
+function normalizeItems(items: any): WorkOrderItem[] {
+  if (!Array.isArray(items)) return [];
+
+  return items.map((row: any) => ({
+    itemName: row.itemName ?? row.name ?? "",
+    description: row.description ?? "",
     quantity: Number(row.quantity ?? 1),
-    unit: row.unit ?? "Nos",
-    dueDate: row.dueDate
-      ? String(row.dueDate).slice(0, 10)
-      : "",
-    assignedTeam: row.assignedTeam ?? "",
-    priority: row.priority ?? "Medium",
-    status: row.status ?? "Draft",
-    notes: row.notes ?? "",
+    unit: row.unit ?? "NOS",
+  }));
+}
+
+function normalizeWorkOrder(item: any): WorkOrder {
+  return {
+    id: String(item.id),
+    workOrderNo: item.workOrderNo || "WO-PENDING",
+    salesOrderId:
+      item.salesOrderId != null ? String(item.salesOrderId) : null,
+    salesOrderNo: item.salesOrderNo ?? null,
+    customerName: item.customerName ?? "",
+    projectName: item.projectName ?? "",
+    startDate: item.startDate ? String(item.startDate).slice(0, 10) : "",
+    dueDate: item.dueDate ? String(item.dueDate).slice(0, 10) : "",
+    priority: item.priority ?? "Medium",
+    status: item.status ?? "Draft",
+    notes: item.notes ?? "",
+    items: normalizeItems(item.items),
+    createdAt: item.createdAt,
   };
 }
 
-function cleanSalesOrder(row: any): SalesOrder {
+function normalizeSalesOrderLite(item: any): SalesOrderLite {
   return {
-    ...row,
-    id: String(row.id),
-    orderNo: row.orderNo ?? row.salesOrderNo ?? "",
-    customerId:
-      row.customerId ?? row.customer?.id ?? null,
-    customerName:
-      row.customerName ?? row.customer?.name ?? "",
-    projectName: row.projectName ?? "",
-    status: row.status ?? "",
+    id: String(item.id),
+    salesOrderNo: item.salesOrderNo ?? "",
+    customerName: item.customerName ?? "",
+    projectName: item.projectName ?? "",
+    deliveryDate: item.deliveryDate
+      ? String(item.deliveryDate).slice(0, 10)
+      : "",
+    items: normalizeItems(item.items),
   };
 }
+
+const emptyForm = {
+  salesOrderId: "",
+  customerName: "",
+  projectName: "",
+  startDate: today(),
+  dueDate: "",
+  priority: "Medium",
+  status: "Draft",
+  notes: "",
+};
+
+const emptyItem = (): WorkOrderItem => ({
+  itemName: "",
+  description: "",
+  quantity: 1,
+  unit: "NOS",
+});
+
+function priorityClass(priority: string) {
+  if (priority === "High") return "bg-red-100 text-red-700";
+  if (priority === "Low") return "bg-green-100 text-green-700";
+  return "bg-amber-100 text-amber-700";
+}
+
 function WorkOrdersPage() {
   const [orders, setOrders] = useState<WorkOrder[]>([]);
-  const [salesOrders, setSalesOrders] = useState<SalesOrder[]>([]);
-  const [form, setForm] = useState({ ...blank });
+  const [salesOrders, setSalesOrders] = useState<SalesOrderLite[]>([]);
+
+  const [form, setForm] = useState({ ...emptyForm });
+  const [formItems, setFormItems] = useState<WorkOrderItem[]>([]);
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewing, setViewing] = useState<WorkOrder | null>(null);
   const [showForm, setShowForm] = useState(false);
+
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const input =
-    "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
-
   const loadOrders = useCallback(async () => {
     setLoading(true);
+    setError("");
 
     try {
-      const data = await responseData(
-        await fetch(`${API}/work-orders`)
-      );
+      const response = await fetch(`${API_BASE}/work-orders`);
+      const data = await parseResponse(response);
 
       setOrders(
-        arrayFrom<any>(data, ["workOrders", "data"])
-          .map(cleanWorkOrder)
+        getList<any>(data, ["workOrders", "orders", "data"]).map(
+          normalizeWorkOrder,
+        ),
       );
-      setError("");
-    } catch (e) {
+    } catch (err) {
       setError(
-        e instanceof Error ? e.message : "Could not load Work Orders."
+        err instanceof Error
+          ? err.message
+          : "Work Orders could not be loaded.",
       );
     } finally {
       setLoading(false);
@@ -153,242 +208,298 @@ function WorkOrdersPage() {
 
   const loadSalesOrders = useCallback(async () => {
     try {
-      const data = await responseData(
-        await fetch(`${API}/sales-orders`)
-      );
+      const response = await fetch(`${API_BASE}/sales-orders`);
+      const data = await parseResponse(response);
 
       setSalesOrders(
-        arrayFrom<any>(data, ["salesOrders", "data"])
-          .map(cleanSalesOrder)
+        getList<any>(data, ["salesOrders", "orders", "data"]).map(
+          normalizeSalesOrderLite,
+        ),
       );
-    } catch (e) {
+    } catch {
+      // Sales order list is optional; the form still works without it.
       setSalesOrders([]);
-      setError(
-        e instanceof Error
-          ? `Sales Order dropdown: ${e.message}`
-          : "Could not load Sales Orders."
-      );
     }
   }, []);
 
-  const refresh = useCallback(async () => {
-    await Promise.all([loadOrders(), loadSalesOrders()]);
+  useEffect(() => {
+    void loadOrders();
+    void loadSalesOrders();
   }, [loadOrders, loadSalesOrders]);
 
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  const filteredOrders = useMemo(() => {
+    const query = search.trim().toLowerCase();
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-
-    return orders.filter((o) => {
-      const textMatch = [
-        o.workOrderNo,
-        o.customerName,
-        o.projectName,
-        o.productWork,
-        o.assignedTeam,
-        o.status,
-      ].some((v) => String(v ?? "").toLowerCase().includes(q));
-
-      return (
-        textMatch &&
-        (statusFilter === "All" || o.status === statusFilter)
+    return orders.filter((order) => {
+      const matchesSearch = [
+        order.workOrderNo,
+        order.salesOrderNo,
+        order.customerName,
+        order.projectName,
+        order.status,
+        order.notes,
+      ].some((value) =>
+        String(value ?? "").toLowerCase().includes(query),
       );
+
+      const matchesStatus =
+        statusFilter === "All" || order.status === statusFilter;
+
+      return matchesSearch && matchesStatus;
     });
   }, [orders, search, statusFilter]);
 
-  function field(name: keyof typeof blank, value: string) {
-    setForm((old) => ({ ...old, [name]: value }));
+  const stats = useMemo(
+    () => ({
+      draft: orders.filter((o) => o.status === "Draft").length,
+      approved: orders.filter((o) => o.status === "Approved").length,
+      production: orders.filter((o) => o.status === "In Production")
+        .length,
+      completed: orders.filter((o) => o.status === "Completed").length,
+    }),
+    [orders],
+  );
+
+  function setField<K extends keyof typeof emptyForm>(
+    field: K,
+    value: (typeof emptyForm)[K],
+  ) {
+    setForm((previous) => ({
+      ...previous,
+      [field]: value,
+    }));
   }
 
-  function chooseOrder(id: string) {
-    const so = salesOrders.find((x) => x.id === id);
-
-    if (!id || !so) {
-      setForm((old) => ({
-        ...old,
-        salesOrderId: "",
-        customerId: "",
-        customerName: "",
-        projectName: "",
-      }));
+  function selectSalesOrder(id: string) {
+    if (!id) {
+      setField("salesOrderId", "");
       return;
     }
 
-    setForm((old) => ({
-      ...old,
-      salesOrderId: id,
-      customerId: String(so.customerId ?? ""),
-      customerName: so.customerName ?? "",
-      projectName: so.projectName ?? "",
-    }));
+    const so = salesOrders.find((item) => item.id === id);
+    if (!so) return;
 
-    setError("");
+    setForm((previous) => ({
+      ...previous,
+      salesOrderId: id,
+      customerName: so.customerName,
+      projectName: so.projectName,
+      dueDate: so.deliveryDate || previous.dueDate,
+    }));
+    setFormItems(so.items.map((item) => ({ ...item })));
   }
 
-  function createNew() {
+  function updateItem<K extends keyof WorkOrderItem>(
+    index: number,
+    field: K,
+    value: WorkOrderItem[K],
+  ) {
+    setFormItems((previous) =>
+      previous.map((item, i) =>
+        i === index ? { ...item, [field]: value } : item,
+      ),
+    );
+  }
+
+  function removeItem(index: number) {
+    setFormItems((previous) => previous.filter((_, i) => i !== index));
+  }
+
+  function openCreate() {
     setEditingId(null);
     setViewing(null);
-    setForm({ ...blank });
+    setForm({ ...emptyForm, startDate: today() });
+    setFormItems([]);
+    setShowForm(true);
     setError("");
     setSuccess("");
-    setShowForm(true);
   }
 
-  function edit(item: WorkOrder) {
-    setEditingId(item.id);
+  function openEdit(order: WorkOrder) {
+    setEditingId(order.id);
     setViewing(null);
 
     setForm({
-      salesOrderId: item.salesOrderId ?? "",
-      customerId: item.customerId ?? "",
-      customerName: item.customerName,
-      projectName: item.projectName,
-      productWork: item.productWork,
-      quantity: String(item.quantity),
-      unit: item.unit,
-      dueDate: item.dueDate ?? "",
-      assignedTeam: item.assignedTeam ?? "",
-      priority: item.priority,
-      status: item.status,
-      notes: item.notes ?? "",
+      salesOrderId: order.salesOrderId ?? "",
+      customerName: order.customerName ?? "",
+      projectName: order.projectName ?? "",
+      startDate: order.startDate || today(),
+      dueDate: order.dueDate || "",
+      priority: order.priority || "Medium",
+      status: order.status || "Draft",
+      notes: order.notes ?? "",
     });
 
-    setError("");
-    setSuccess("");
+    setFormItems(order.items.map((item) => ({ ...item })));
     setShowForm(true);
-  }
-  async function save(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSaving(true);
     setError("");
     setSuccess("");
+  }
+
+  function validateForm() {
+    if (!form.customerName.trim()) {
+      setError("Customer name is required.");
+      return false;
+    }
+
+    if (!form.projectName.trim()) {
+      setError("Project name is required.");
+      return false;
+    }
+
+    if (!form.startDate) {
+      setError("Please select the start date.");
+      return false;
+    }
+
+    if (form.dueDate && form.dueDate < form.startDate) {
+      setError("Due date cannot be before the start date.");
+      return false;
+    }
+
+    return true;
+  }
+
+  async function submitForm(
+    event: React.FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+    setError("");
+    setSuccess("");
+
+    if (!validateForm()) return;
+
+    setSaving(true);
 
     try {
-      const qty = Number(form.quantity);
-      const customerId = form.customerId.trim();
-      const customerName = form.customerName.trim();
+      const existing = editingId
+        ? orders.find((item) => item.id === editingId)
+        : undefined;
 
-      if (!form.salesOrderId) {
-        throw new Error("Please select a Sales Order.");
-      }
-
-      if (!customerId) {
-        throw new Error(
-          "Customer ID is missing. Please check the selected Sales Order."
-        );
-      }
-
-      if (!customerName) {
-        throw new Error("Customer name is required.");
-      }
-
-      if (!form.projectName.trim()) {
-        throw new Error("Project name is required.");
-      }
-
-      if (!form.productWork.trim()) {
-        throw new Error("Product / Work is required.");
-      }
-
-      if (!Number.isFinite(qty) || qty <= 0) {
-        throw new Error("Quantity must be greater than zero.");
-      }
+      const linkedSalesOrder = salesOrders.find(
+        (item) => item.id === form.salesOrderId,
+      );
 
       const payload = {
-        salesOrderId: form.salesOrderId,
-        customerId,
-        customerName,
+        workOrderNo: existing?.workOrderNo ?? createWorkOrderNumber(),
+        salesOrderId: form.salesOrderId || null,
+        salesOrderNo:
+          linkedSalesOrder?.salesOrderNo ??
+          (form.salesOrderId ? existing?.salesOrderNo : null) ??
+          null,
+        customerName: form.customerName.trim(),
         projectName: form.projectName.trim(),
-        productWork: form.productWork.trim(),
-        quantity: qty,
-        unit: form.unit,
+        startDate: form.startDate,
         dueDate: form.dueDate || null,
-        assignedTeam: form.assignedTeam.trim() || null,
         priority: form.priority,
         status: form.status,
         notes: form.notes.trim() || null,
+        items: formItems
+          .filter((item) => item.itemName.trim())
+          .map((item) => ({
+            itemName: item.itemName.trim(),
+            description: item.description?.trim() || null,
+            quantity: Number(item.quantity) || 1,
+            unit: item.unit || "NOS",
+          })),
       };
 
       const url = editingId
-        ? `${API}/work-orders/${encodeURIComponent(editingId)}`
-        : `${API}/work-orders`;
+        ? `${API_BASE}/work-orders/${encodeURIComponent(editingId)}`
+        : `${API_BASE}/work-orders`;
 
-      await responseData(
-        await fetch(url, {
-          method: editingId ? "PUT" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        })
-      );
+      const response = await fetch(url, {
+        method: editingId ? "PUT" : "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      await parseResponse(response);
 
       setSuccess(
         editingId
           ? "Work Order updated successfully."
-          : "Work Order created successfully."
+          : "Work Order saved successfully.",
       );
 
       setShowForm(false);
       setEditingId(null);
-      setForm({ ...blank });
+      setForm({ ...emptyForm });
+      setFormItems([]);
+
       await loadOrders();
-    } catch (e) {
+    } catch (err) {
       setError(
-        e instanceof Error ? e.message : "Could not save Work Order."
+        err instanceof Error
+          ? err.message
+          : "Work Order could not be saved.",
       );
     } finally {
       setSaving(false);
     }
   }
 
-  async function remove(item: WorkOrder) {
-    if (!window.confirm(`Delete ${item.workOrderNo}?`)) return;
+  async function deleteOrder(order: WorkOrder) {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete ${order.workOrderNo}?`,
+    );
+
+    if (!confirmed) return;
 
     setError("");
     setSuccess("");
 
     try {
-      await responseData(
-        await fetch(
-          `${API}/work-orders/${encodeURIComponent(item.id)}`,
-          { method: "DELETE" }
-        )
+      const response = await fetch(
+        `${API_BASE}/work-orders/${encodeURIComponent(order.id)}`,
+        { method: "DELETE" },
       );
+
+      await parseResponse(response);
 
       setSuccess("Work Order deleted successfully.");
       await loadOrders();
-    } catch (e) {
+    } catch (err) {
       setError(
-        e instanceof Error ? e.message : "Could not delete Work Order."
+        err instanceof Error
+          ? err.message
+          : "Work Order could not be deleted.",
       );
     }
   }
 
-  const count = (status: string) =>
-    orders.filter((o) => o.status === status).length;
+  function viewOrder(order: WorkOrder) {
+    setViewing(order);
+    setShowForm(false);
+    setError("");
+  }
 
   return (
     <AppShell title="Work Orders">
-      <main className="space-y-5 p-4 md:p-6">
-        <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="space-y-5 p-4 md:p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs font-medium text-gray-500">
               Production execution control
             </p>
             <h1 className="text-2xl font-bold text-gray-900">
               Work Orders
             </h1>
             <p className="mt-1 text-sm text-gray-500">
-              Create and track manufacturing work from confirmed sales.
+              Create and track manufacturing work from confirmed
+              sales.
             </p>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => void refresh()}
+              onClick={() => {
+                void loadOrders();
+                void loadSalesOrders();
+              }}
               className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
             >
               <RefreshCw className="h-4 w-4" />
@@ -397,14 +508,14 @@ function WorkOrdersPage() {
 
             <button
               type="button"
-              onClick={createNew}
+              onClick={openCreate}
               className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
             >
               <Plus className="h-4 w-4" />
               Create Work Order
             </button>
           </div>
-        </header>
+        </div>
 
         {error && (
           <div
@@ -424,51 +535,68 @@ function WorkOrdersPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {[
-            ["Draft", count("Draft")],
-            ["Approved", count("Approved")],
-            ["In Production", count("In Production")],
-            ["Completed", count("Completed")],
-          ].map(([label, value]) => (
-            <div key={String(label)} className="rounded-xl border bg-white p-4">
-              <p className="text-sm text-gray-500">{label}</p>
-              <p className="mt-2 text-2xl font-bold">{value}</p>
+            { label: "Draft", value: stats.draft },
+            { label: "Approved", value: stats.approved },
+            { label: "In Production", value: stats.production },
+            { label: "Completed", value: stats.completed },
+          ].map((card) => (
+            <div
+              key={card.label}
+              className="rounded-xl border bg-white p-5"
+            >
+              <p className="text-sm text-gray-500">{card.label}</p>
+              <p className="mt-2 text-2xl font-bold text-gray-900">
+                {card.value}
+              </p>
             </div>
           ))}
         </div>
+
         {showForm && (
           <section className="rounded-xl border bg-white p-4 md:p-6">
             <div className="mb-5 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">
-                {editingId ? "Edit Work Order" : "Create Work Order"}
-              </h2>
+              <div>
+                <h2 className="text-lg font-semibold">
+                  {editingId
+                    ? "Edit Work Order"
+                    : "Create Work Order"}
+                </h2>
+                <p className="mt-1 text-sm text-gray-500">
+                  Select a Sales Order (optional) or type the
+                  customer details directly.
+                </p>
+              </div>
+
               <button
                 type="button"
-                aria-label="Close form"
                 onClick={() => setShowForm(false)}
+                aria-label="Close work order form"
                 className="rounded p-1 hover:bg-gray-100"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <form onSubmit={save} className="space-y-4">
+            <form onSubmit={submitForm} className="space-y-5">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <label className="space-y-1 text-sm">
-                  <span>Sales Order *</span>
+                <label className="space-y-1 text-sm md:col-span-3">
+                  <span>Sales Order (optional)</span>
                   <select
-                    required
-                    className={input}
+                    className={inputClass}
                     value={form.salesOrderId}
-                    onChange={(e) => chooseOrder(e.target.value)}
+                    onChange={(event) =>
+                      selectSalesOrder(event.target.value)
+                    }
                   >
-                    <option value="">Select Sales Order</option>
+                    <option value="">
+                      — None / type customer manually —
+                    </option>
                     {salesOrders.map((so) => (
                       <option key={so.id} value={so.id}>
-                        {so.orderNo || `SO-${so.id}`} —{" "}
-                        {so.customerName || "Customer"}
-                        {so.status ? ` (${so.status})` : ""}
+                        {so.salesOrderNo} — {so.customerName} (
+                        {so.projectName})
                       </option>
                     ))}
                   </select>
@@ -477,92 +605,83 @@ function WorkOrdersPage() {
                 <label className="space-y-1 text-sm">
                   <span>Customer Name *</span>
                   <input
+                    className={inputClass}
                     required
-                    readOnly
-                    className={`${input} bg-gray-100`}
                     value={form.customerName}
-                    placeholder="Select a Sales Order first"
+                    onChange={(event) =>
+                      setField("customerName", event.target.value)
+                    }
+                    placeholder="Customer name"
                   />
                 </label>
 
                 <label className="space-y-1 text-sm">
                   <span>Project Name *</span>
                   <input
+                    className={inputClass}
                     required
-                    className={input}
                     value={form.projectName}
-                    onChange={(e) => field("projectName", e.target.value)}
-                  />
-                </label>
-
-                <label className="space-y-1 text-sm md:col-span-2">
-                  <span>Product / Work *</span>
-                  <input
-                    required
-                    className={input}
-                    placeholder="Modular kitchen, wardrobe, TV unit..."
-                    value={form.productWork}
-                    onChange={(e) => field("productWork", e.target.value)}
+                    onChange={(event) =>
+                      setField("projectName", event.target.value)
+                    }
+                    placeholder="Modular Kitchen, Wardrobe..."
                   />
                 </label>
 
                 <label className="space-y-1 text-sm">
-                  <span>Quantity *</span>
+                  <span>Work Order Number</span>
                   <input
-                    required
-                    type="number"
-                    min="0.001"
-                    step="any"
-                    className={input}
-                    value={form.quantity}
-                    onChange={(e) => field("quantity", e.target.value)}
+                    className={inputClass}
+                    readOnly
+                    value={
+                      editingId
+                        ? orders.find(
+                            (order) => order.id === editingId,
+                          )?.workOrderNo ?? ""
+                        : "Generated on save"
+                    }
                   />
                 </label>
 
                 <label className="space-y-1 text-sm">
-                  <span>Unit</span>
-                  <select
-                    className={input}
-                    value={form.unit}
-                    onChange={(e) => field("unit", e.target.value)}
-                  >
-                    {["Nos", "Set", "Sq.Ft", "Sq.M", "RFT", "Sheet"].map(
-                      (unit) => (
-                        <option key={unit} value={unit}>{unit}</option>
-                      )
-                    )}
-                  </select>
+                  <span>Start Date *</span>
+                  <input
+                    className={inputClass}
+                    type="date"
+                    required
+                    value={form.startDate}
+                    onChange={(event) =>
+                      setField("startDate", event.target.value)
+                    }
+                  />
                 </label>
 
                 <label className="space-y-1 text-sm">
                   <span>Due Date</span>
                   <input
+                    className={inputClass}
                     type="date"
-                    className={input}
+                    min={form.startDate}
                     value={form.dueDate}
-                    onChange={(e) => field("dueDate", e.target.value)}
-                  />
-                </label>
-
-                <label className="space-y-1 text-sm">
-                  <span>Assigned Team</span>
-                  <input
-                    className={input}
-                    placeholder="Production team / employee"
-                    value={form.assignedTeam}
-                    onChange={(e) => field("assignedTeam", e.target.value)}
+                    onChange={(event) =>
+                      setField("dueDate", event.target.value)
+                    }
                   />
                 </label>
 
                 <label className="space-y-1 text-sm">
                   <span>Priority</span>
                   <select
-                    className={input}
+                    className={inputClass}
                     value={form.priority}
-                    onChange={(e) => field("priority", e.target.value)}
+                    onChange={(event) =>
+                      setField("priority", event.target.value)
+                    }
                   >
-                    {PRIORITIES.map((p) => (
-                      <option key={p} value={p}>{p}</option>
+                    {PRIORITY_OPTIONS.map((priority) => (
+                      <option key={priority} value={priority}>
+                        {priority}
+                      </option>
                     ))}
                   </select>
                 </label>
@@ -570,25 +689,121 @@ function WorkOrdersPage() {
                 <label className="space-y-1 text-sm">
                   <span>Status</span>
                   <select
-                    className={input}
+                    className={inputClass}
                     value={form.status}
-                    onChange={(e) => field("status", e.target.value)}
+                    onChange={(event) =>
+                      setField("status", event.target.value)
+                    }
                   >
-                    {STATUSES.map((s) => (
-                      <option key={s} value={s}>{s}</option>
+                    {STATUS_OPTIONS.map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
                     ))}
                   </select>
                 </label>
               </div>
 
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">
+                    Items to Produce
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFormItems((previous) => [
+                        ...previous,
+                        emptyItem(),
+                      ])
+                    }
+                    className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add Item
+                  </button>
+                </div>
+
+                {formItems.length === 0 ? (
+                  <p className="text-sm text-gray-500">
+                    No items added yet.
+                  </p>
+                ) : (
+                  formItems.map((item, index) => (
+                    <div
+                      key={index}
+                      className="grid grid-cols-1 gap-2 rounded-lg border p-3 md:grid-cols-12"
+                    >
+                      <input
+                        className={`${inputClass} md:col-span-4`}
+                        placeholder="Item name"
+                        value={item.itemName}
+                        onChange={(event) =>
+                          updateItem(
+                            index,
+                            "itemName",
+                            event.target.value,
+                          )
+                        }
+                      />
+                      <input
+                        className={`${inputClass} md:col-span-4`}
+                        placeholder="Description / size"
+                        value={item.description ?? ""}
+                        onChange={(event) =>
+                          updateItem(
+                            index,
+                            "description",
+                            event.target.value,
+                          )
+                        }
+                      />
+                      <input
+                        className={`${inputClass} md:col-span-2`}
+                        type="number"
+                        min="0"
+                        step="any"
+                        placeholder="Qty"
+                        value={item.quantity}
+                        onChange={(event) =>
+                          updateItem(
+                            index,
+                            "quantity",
+                            Number(event.target.value),
+                          )
+                        }
+                      />
+                      <input
+                        className={`${inputClass} md:col-span-1`}
+                        placeholder="Unit"
+                        value={item.unit}
+                        onChange={(event) =>
+                          updateItem(index, "unit", event.target.value)
+                        }
+                      />
+                      <button
+                        type="button"
+                        aria-label="Remove item"
+                        onClick={() => removeItem(index)}
+                        className="rounded p-2 text-red-600 hover:bg-red-50 md:col-span-1"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+
               <label className="block space-y-1 text-sm">
                 <span>Notes / Production Instructions</span>
                 <textarea
+                  className={inputClass}
                   rows={3}
-                  className={input}
                   value={form.notes}
-                  onChange={(e) => field("notes", e.target.value)}
-                  placeholder="Material, finish, dimensions, installation instructions..."
+                  onChange={(event) =>
+                    setField("notes", event.target.value)
+                  }
+                  placeholder="Material, finish, size or production instructions..."
                 />
               </label>
 
@@ -604,6 +819,7 @@ function WorkOrdersPage() {
                       ? "Update Work Order"
                       : "Save Work Order"}
                 </button>
+
                 <button
                   type="button"
                   onClick={() => setShowForm(false)}
@@ -618,129 +834,256 @@ function WorkOrdersPage() {
 
         {viewing && (
           <section className="space-y-4 rounded-xl border bg-white p-4 md:p-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">
-                Work Order Details: {viewing.workOrderNo}
-              </h2>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold">
+                  Work Order Details
+                </h2>
+                <p className="text-sm text-gray-500">
+                  {viewing.workOrderNo}
+                </p>
+              </div>
+
               <button
                 type="button"
                 onClick={() => setViewing(null)}
-                aria-label="Close details"
+                aria-label="Close work order details"
                 className="rounded p-2 hover:bg-gray-100"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
-              <p><strong>Customer:</strong> {viewing.customerName}</p>
-              <p><strong>Project:</strong> {viewing.projectName}</p>
-              <p><strong>Product / Work:</strong> {viewing.productWork}</p>
-              <p><strong>Quantity:</strong> {viewing.quantity} {viewing.unit}</p>
-              <p><strong>Due Date:</strong> {viewing.dueDate || "—"}</p>
-              <p><strong>Assigned Team:</strong> {viewing.assignedTeam || "—"}</p>
-              <p><strong>Priority:</strong> {viewing.priority}</p>
-              <p><strong>Status:</strong> {viewing.status}</p>
-              <p><strong>Sales Order ID:</strong> {viewing.salesOrderId || "—"}</p>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div>
+                <p className="text-xs text-gray-500">Customer</p>
+                <p className="font-medium">
+                  {viewing.customerName || "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Project</p>
+                <p className="font-medium">
+                  {viewing.projectName || "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Sales Order</p>
+                <p className="font-medium">
+                  {viewing.salesOrderNo || "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Start Date</p>
+                <p className="font-medium">
+                  {viewing.startDate || "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Due Date</p>
+                <p className="font-medium">
+                  {viewing.dueDate || "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Priority</p>
+                <p className="font-medium">{viewing.priority}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Status</p>
+                <p className="font-medium">{viewing.status}</p>
+              </div>
             </div>
+
+            {viewing.items.length > 0 && (
+              <div className="overflow-x-auto">
+                <h3 className="mb-3 font-semibold">
+                  Items to Produce
+                </h3>
+                <table className="w-full min-w-[500px] text-left text-sm">
+                  <thead className="bg-gray-50 text-gray-600">
+                    <tr>
+                      <th className="p-3">Item</th>
+                      <th className="p-3">Quantity</th>
+                      <th className="p-3">Unit</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {viewing.items.map((item, index) => (
+                      <tr key={`${item.itemName}-${index}`}>
+                        <td className="p-3">
+                          <div>{item.itemName}</div>
+                          {item.description && (
+                            <div className="text-xs text-gray-500">
+                              {item.description}
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-3">{item.quantity}</td>
+                        <td className="p-3">{item.unit}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
             {viewing.notes && (
               <p className="text-sm">
                 <strong>Notes:</strong> {viewing.notes}
               </p>
             )}
+
+            <button
+              type="button"
+              onClick={() => openEdit(viewing)}
+              className="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm hover:bg-gray-50"
+            >
+              <Pencil className="h-4 w-4" />
+              Edit Work Order
+            </button>
           </section>
         )}
 
         <section className="overflow-hidden rounded-xl border bg-white">
-          <div className="flex flex-col gap-3 border-b p-4 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex flex-col gap-3 border-b p-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h2 className="font-semibold">Work Order Records</h2>
-              <p className="text-xs text-gray-500">{filtered.length} record(s)</p>
+              <p className="mt-1 text-xs text-gray-500">
+                {filteredOrders.length} record(s)
+              </p>
             </div>
 
             <div className="flex flex-col gap-2 sm:flex-row">
               <div className="relative">
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
                 <input
-                  className={`${input} pl-9 sm:w-72`}
+                  className={`${inputClass} pl-9 sm:w-64`}
                   placeholder="Search order, customer, project..."
                   value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={(event) => setSearch(event.target.value)}
                 />
               </div>
 
               <select
-                className={input}
+                className={inputClass}
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                onChange={(event) =>
+                  setStatusFilter(event.target.value)
+                }
+                aria-label="Filter work orders by status"
               >
                 <option value="All">All Statuses</option>
-                {STATUSES.map((s) => (
-                  <option key={s} value={s}>{s}</option>
+                {STATUS_OPTIONS.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
                 ))}
               </select>
             </div>
           </div>
 
           {loading ? (
-            <p className="p-6 text-sm text-gray-500">Loading Work Orders...</p>
-          ) : filtered.length === 0 ? (
-            <p className="p-6 text-sm text-gray-500">No Work Orders found.</p>
+            <p className="p-6 text-sm text-gray-500">
+              Loading Work Orders...
+            </p>
+          ) : filteredOrders.length === 0 ? (
+            <div className="p-8 text-center">
+              <p className="font-medium text-gray-700">
+                No Work Orders found.
+              </p>
+              <p className="mt-1 text-sm text-gray-500">
+                Create a new work order or refresh the list.
+              </p>
+              <button
+                type="button"
+                onClick={openCreate}
+                className="mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white"
+              >
+                <Plus className="h-4 w-4" />
+                Create Work Order
+              </button>
+            </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1050px] text-left text-sm">
+              <table className="w-full min-w-[1000px] text-left text-sm">
                 <thead className="bg-gray-50 text-gray-600">
                   <tr>
-                    {[
-                      "Work Order", "Customer / Project", "Product / Work",
-                      "Qty", "Due Date", "Assigned Team", "Priority",
-                      "Status", "Actions",
-                    ].map((heading) => (
-                      <th key={heading} className="p-3">{heading}</th>
-                    ))}
+                    <th className="p-3">Work Order</th>
+                    <th className="p-3">Customer / Project</th>
+                    <th className="p-3">Sales Order</th>
+                    <th className="p-3">Start Date</th>
+                    <th className="p-3">Due Date</th>
+                    <th className="p-3">Priority</th>
+                    <th className="p-3">Status</th>
+                    <th className="p-3">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {filtered.map((item) => (
-                    <tr key={item.id} className="hover:bg-gray-50">
-                      <td className="p-3 font-medium">{item.workOrderNo}</td>
-                      <td className="p-3">
-                        <div>{item.customerName}</div>
-                        <div className="text-xs text-gray-500">{item.projectName}</div>
+                  {filteredOrders.map((order) => (
+                    <tr key={order.id} className="hover:bg-gray-50">
+                      <td className="p-3 font-semibold">
+                        {order.workOrderNo}
                       </td>
-                      <td className="p-3">{item.productWork}</td>
-                      <td className="p-3">{item.quantity} {item.unit}</td>
-                      <td className="p-3">{item.dueDate || "—"}</td>
-                      <td className="p-3">{item.assignedTeam || "—"}</td>
-                      <td className="p-3">{item.priority}</td>
+
                       <td className="p-3">
-                        <span className="rounded-full bg-gray-100 px-2 py-1 text-xs">
-                          {item.status}
+                        <div className="font-medium">
+                          {order.customerName || "—"}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {order.projectName || "—"}
+                        </div>
+                      </td>
+
+                      <td className="p-3">
+                        {order.salesOrderNo || "—"}
+                      </td>
+
+                      <td className="p-3">{order.startDate || "—"}</td>
+
+                      <td className="p-3">{order.dueDate || "—"}</td>
+
+                      <td className="p-3">
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${priorityClass(order.priority)}`}
+                        >
+                          {order.priority}
                         </span>
                       </td>
+
+                      <td className="p-3">
+                        <span className="inline-flex rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
+                          {order.status}
+                        </span>
+                      </td>
+
                       <td className="p-3">
                         <div className="flex gap-1">
                           <button
                             type="button"
+                            aria-label={`View ${order.workOrderNo}`}
                             title="View"
-                            onClick={() => setViewing(item)}
-                            className="rounded p-2 hover:bg-gray-100"
+                            onClick={() => viewOrder(order)}
+                            className="rounded p-2 text-gray-700 hover:bg-gray-100"
                           >
                             <Eye className="h-4 w-4" />
                           </button>
+
                           <button
                             type="button"
+                            aria-label={`Edit ${order.workOrderNo}`}
                             title="Edit"
-                            onClick={() => edit(item)}
+                            onClick={() => openEdit(order)}
                             className="rounded p-2 text-blue-600 hover:bg-blue-50"
                           >
                             <Pencil className="h-4 w-4" />
                           </button>
+
                           <button
                             type="button"
+                            aria-label={`Delete ${order.workOrderNo}`}
                             title="Delete"
-                            onClick={() => void remove(item)}
+                            onClick={() => void deleteOrder(order)}
                             className="rounded p-2 text-red-600 hover:bg-red-50"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -754,7 +1097,7 @@ function WorkOrdersPage() {
             </div>
           )}
         </section>
-      </main>
+      </div>
     </AppShell>
   );
 }
