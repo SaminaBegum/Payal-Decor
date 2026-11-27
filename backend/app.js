@@ -1,4 +1,4 @@
-﻿const express = require("express");
+const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
@@ -21,6 +21,7 @@ const reportsRoutes = require("./routes/reportsRoutes");
 const installationRoutes = require("./routes/installationRoutes");
 const projectRoutes = require("./routes/projectRoutes");
 const dispatchRoutes = require("./routes/dispatchRoutes");
+const paymentRoutes = require("./routes/paymentRoutes");
 const productRoutes = require("./routes/productRoutes");
 
 const app = express();
@@ -133,6 +134,9 @@ app.use("/api/projects", projectRoutes);
 // Dispatch & Delivery routes
 app.use("/api/dispatches", dispatchRoutes);
 
+// Payment routes
+app.use("/api/payments", paymentRoutes);
+
 // Purchase Order routes
 app.use("/api/purchase", purchaseRoutes);
 app.use("/purchase", purchaseRoutes);
@@ -147,3 +151,4 @@ app.use("/api/products", productRoutes);
 app.use("/products", productRoutes);
 
 module.exports = app;
+
