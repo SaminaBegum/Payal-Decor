@@ -1,4 +1,4 @@
-﻿import { useMemo } from "react";
+import { useMemo } from "react";
 import {
   BrowserRouter,
   Navigate,
@@ -48,6 +48,7 @@ import SiteVisitMeasurementPage from "./routes/site-visit-measurement";
 import VendorsPage from "./routes/vendors";
 import WorkOrdersPage from "./routes/work-orders";
 import EmployeeDashboardPage from "./routes/employee-dashboard";
+import EmployeeTasksPage from "./routes/employee-tasks";
 
 function RequireAuth() {
   const location = useLocation();
@@ -116,6 +117,8 @@ function AppRoutes() {
       <Route element={<RequireAuth />}>
         <Route element={<RequireEmployee />}>
           <Route path="/employee-dashboard" element={<EmployeeDashboardPage />} />
+
+  <Route path="/employee-tasks" element={<EmployeeTasksPage />} />
         </Route>
         <Route element={<RequireNonEmployee />}>
         <Route path="/" element={<Dashboard />} />
