@@ -22,6 +22,8 @@ const installationRoutes = require("./routes/installationRoutes");
 const projectRoutes = require("./routes/projectRoutes");
 const dispatchRoutes = require("./routes/dispatchRoutes");
 const productRoutes = require("./routes/productRoutes");
+const inventoryProductRoutes = require("./routes/inventoryProductRoutes"); // NEW
+
 
 const app = express();
 
@@ -30,9 +32,9 @@ app.use(helmet());
 
 // CORS configuration
 app.use(cors(corsOptions));
-
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+//raising the limit for images .
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 // Rate limiting for authentication routes (prevent brute force)
 const authLimiter = rateLimit({
@@ -56,6 +58,7 @@ const apiLimiter = rateLimit({
   max: 300,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => /^\/inventory-products\/[^/]+\/image$/.test(req.path),   // NEW
   message: {
     success: false,
     message: "Too many requests from this IP, please try again after 15 minutes.",
@@ -146,4 +149,6 @@ app.use("/reports", reportsRoutes);
 app.use("/api/products", productRoutes);
 app.use("/products", productRoutes);
 
+// Inventory Products routes
+app.use("/api/inventory-products", inventoryProductRoutes);
 module.exports = app;
