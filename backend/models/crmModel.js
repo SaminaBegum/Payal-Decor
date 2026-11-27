@@ -68,6 +68,8 @@ const getAllLeads = async (filters = {}) => {
     "primaryPhone",
     "locality",
     "status",
+    "leadStatus",
+    "requirements",
     "createdAt",
     "updatedAt",
   ];
@@ -100,6 +102,8 @@ const getAllLeads = async (filters = {}) => {
       "sourceNote",
       "sourceUrl",
       status,
+      COALESCE("leadStatus", status, 'New') AS "leadStatus",
+      COALESCE(requirements, '') AS requirements,
       notes,
       "lastEmailedAt",
       "createdAt",
@@ -134,6 +138,8 @@ const getLeadById = async (id) => {
       "sourceNote",
       "sourceUrl",
       status,
+      COALESCE("leadStatus", status, 'New') AS "leadStatus",
+      COALESCE(requirements, '') AS requirements,
       notes,
       "lastEmailedAt",
       "createdAt",
@@ -167,6 +173,8 @@ const findLeadByBusinessName = async (businessName) => {
       "sourceNote",
       "sourceUrl",
       status,
+      COALESCE("leadStatus", status, 'New') AS "leadStatus",
+      COALESCE(requirements, '') AS requirements,
       notes,
       "lastEmailedAt",
       "createdAt",
@@ -198,9 +206,13 @@ const createLead = async (leadData) => {
     sourceNote = null,
     sourceUrl = null,
     status = "New",
+    leadStatus = null,
+    requirements = null,
     notes = null,
     lastEmailedAt = null,
   } = leadData;
+
+  const resolvedStatus = status || leadStatus || "New";
 
   const query = `
     INSERT INTO public.crm (
@@ -218,12 +230,14 @@ const createLead = async (leadData) => {
       "sourceNote",
       "sourceUrl",
       status,
+      "leadStatus",
+      requirements,
       notes,
       "lastEmailedAt",
       "createdAt",
       "updatedAt"
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     RETURNING
       id,
       source,
@@ -239,6 +253,8 @@ const createLead = async (leadData) => {
       "sourceNote",
       "sourceUrl",
       status,
+      "leadStatus",
+      requirements,
       notes,
       "lastEmailedAt",
       "createdAt",
@@ -259,7 +275,9 @@ const createLead = async (leadData) => {
     mapsUrl ? mapsUrl.trim() : null,
     sourceNote ? sourceNote.trim() : null,
     sourceUrl ? sourceUrl.trim() : null,
-    status || "New",
+    resolvedStatus,
+    resolvedStatus,
+    requirements ? requirements.trim() : null,
     notes ? notes.trim() : null,
     lastEmailedAt,
   ];
@@ -295,7 +313,9 @@ const updateLead = async (id, leadData) => {
   const updatedMapsUrl = leadData.mapsUrl !== undefined ? leadData.mapsUrl : existing.mapsUrl;
   const updatedSourceNote = leadData.sourceNote !== undefined ? leadData.sourceNote : existing.sourceNote;
   const updatedSourceUrl = leadData.sourceUrl !== undefined ? leadData.sourceUrl : existing.sourceUrl;
-  const updatedStatus = leadData.status !== undefined ? leadData.status : existing.status;
+  const updatedStatus = leadData.status !== undefined ? leadData.status : (leadData.leadStatus !== undefined ? leadData.leadStatus : existing.status);
+  const updatedLeadStatus = leadData.leadStatus !== undefined ? leadData.leadStatus : updatedStatus;
+  const updatedRequirements = leadData.requirements !== undefined ? leadData.requirements : (existing.requirements || null);
   const updatedNotes = leadData.notes !== undefined ? leadData.notes : existing.notes;
   const updatedLastEmailedAt = leadData.lastEmailedAt !== undefined ? leadData.lastEmailedAt : existing.lastEmailedAt;
 
@@ -315,10 +335,12 @@ const updateLead = async (id, leadData) => {
       "sourceNote" = $11,
       "sourceUrl" = $12,
       status = $13,
-      notes = $14,
-      "lastEmailedAt" = $15,
+      "leadStatus" = $14,
+      requirements = $15,
+      notes = $16,
+      "lastEmailedAt" = $17,
       "updatedAt" = CURRENT_TIMESTAMP
-    WHERE id = $16
+    WHERE id = $18
     RETURNING
       id,
       source,
@@ -334,6 +356,8 @@ const updateLead = async (id, leadData) => {
       "sourceNote",
       "sourceUrl",
       status,
+      "leadStatus",
+      requirements,
       notes,
       "lastEmailedAt",
       "createdAt",
@@ -354,6 +378,8 @@ const updateLead = async (id, leadData) => {
     updatedSourceNote ? updatedSourceNote.trim() : null,
     updatedSourceUrl ? updatedSourceUrl.trim() : null,
     updatedStatus,
+    updatedLeadStatus,
+    updatedRequirements ? updatedRequirements.trim() : null,
     updatedNotes ? updatedNotes.trim() : null,
     updatedLastEmailedAt,
     existing.id,
@@ -428,7 +454,9 @@ const syncLeads = async (leadsArray = []) => {
     const mapsUrl = lead.mapsUrl ? lead.mapsUrl.trim() : null;
     const sourceNote = lead.sourceNote ? lead.sourceNote.trim() : null;
     const sourceUrl = lead.sourceUrl ? lead.sourceUrl.trim() : null;
-    const status = lead.status || "New";
+    const status = lead.status || lead.leadStatus || "New";
+    const leadStatus = lead.leadStatus || status;
+    const requirements = lead.requirements ? lead.requirements.trim() : null;
     const notes = lead.notes ? lead.notes.trim() : null;
     const lastEmailedAt = lead.lastEmailedAt || null;
 
@@ -448,12 +476,14 @@ const syncLeads = async (leadsArray = []) => {
         "sourceNote",
         "sourceUrl",
         status,
+        "leadStatus",
+        requirements,
         notes,
         "lastEmailedAt",
         "createdAt",
         "updatedAt"
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       ON CONFLICT (id) DO UPDATE SET
         source = EXCLUDED.source,
         "businessName" = EXCLUDED."businessName",
@@ -468,10 +498,12 @@ const syncLeads = async (leadsArray = []) => {
         "sourceNote" = EXCLUDED."sourceNote",
         "sourceUrl" = EXCLUDED."sourceUrl",
         status = EXCLUDED.status,
+        "leadStatus" = EXCLUDED."leadStatus",
+        requirements = COALESCE(EXCLUDED.requirements, public.crm.requirements),
         notes = EXCLUDED.notes,
         "lastEmailedAt" = COALESCE(EXCLUDED."lastEmailedAt", public.crm."lastEmailedAt"),
         "updatedAt" = CURRENT_TIMESTAMP
-      RETURNING id, "businessName", status
+      RETURNING id, "businessName", status, "leadStatus", requirements
     `;
 
     const values = [
@@ -489,6 +521,8 @@ const syncLeads = async (leadsArray = []) => {
       sourceNote,
       sourceUrl,
       status,
+      leadStatus,
+      requirements,
       notes,
       lastEmailedAt,
     ];

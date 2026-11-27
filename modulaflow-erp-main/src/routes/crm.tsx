@@ -59,12 +59,12 @@ async function apiFetch(endpoint: string, options: RequestInit = {}): Promise<Re
   }
 }
 
-const STORAGE_KEY = "payal_decor_crm_leads_v4";
+const STORAGE_KEY = "payal_decor_crm_leads_v6";
 
 /**
  * Generates direct Gmail Web Compose URL with user-specified Cold Email template
  */
-export function getGmailComposeUrl(lead: {
+function getGmailComposeUrl(lead: {
   businessName: string;
   category?: string;
   locality?: string;
@@ -106,7 +106,7 @@ Team Payal Decor`;
 /**
  * Generates direct WhatsApp message URL with user-specified WhatsApp Introduction template
  */
-export function getWhatsAppUrl(phone: string, businessName: string) {
+function getWhatsAppUrl(phone: string, businessName: string) {
   const cleanPhone = phone.replace(/[^0-9]/g, "");
   if (!cleanPhone) return "#";
   const formattedPhone = cleanPhone.startsWith("91")
@@ -136,10 +136,22 @@ const emptyForm: Omit<CRMLead, "id"> = {
   sourceNote: "",
   sourceUrl: "",
   status: "New",
+  leadStatus: "New",
+  requirements: "",
   notes: "",
 };
 
-export const CATEGORY_OPTIONS = [
+const STATUS_OPTIONS = [
+  "New",
+  "Contacted",
+  "Not Contacted",
+  "Pending",
+  "Quotation Sent",
+  "Closed",
+  "Cold",
+];
+
+const CATEGORY_OPTIONS = [
   "Boys hostel",
   "Girls hostel",
   "PG / hostel",
@@ -155,7 +167,7 @@ export const CATEGORY_OPTIONS = [
   "Hostel",
 ];
 
-export const GENDER_OPTIONS = [
+const GENDER_OPTIONS = [
   "Boys",
   "Girls",
   "Boys & Girls",
@@ -163,7 +175,7 @@ export const GENDER_OPTIONS = [
   "Not stated",
 ];
 
-export const SOURCE_OPTIONS = [
+const SOURCE_OPTIONS = [
   "Meta",
   "Direct Referral",
   "Justdial",
@@ -197,7 +209,6 @@ function CRMPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
-  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   // View Details Modal State
   const [viewingLead, setViewingLead] = useState<CRMLead | null>(null);
@@ -252,6 +263,8 @@ function CRMPage() {
     // Clean up any stale or corrupted storage keys
     try {
       localStorage.removeItem("payal_decor_crm_leads_v3");
+      localStorage.removeItem("payal_decor_crm_leads_v4");
+      localStorage.removeItem("payal_decor_crm_leads_v5");
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
@@ -265,7 +278,10 @@ function CRMPage() {
               !isGarbledText(r.businessName)
           );
           if (valid.length > 0) {
-            currentData = valid;
+            currentData = valid.map((r: CRMLead) => ({
+              ...r,
+              source: (r.source && r.source.toLowerCase().includes("whatsapp")) ? "Meta" : (r.source || "Meta"),
+            }));
           }
         }
       }
@@ -301,7 +317,7 @@ function CRMPage() {
           currentData = validServerLeads.map((s: CRMLead) => ({
             ...s,
             businessName: s.businessName || s.id || "Untitled Lead",
-            source: s.source || "Meta",
+            source: (s.source && s.source.toLowerCase().includes("whatsapp")) ? "Meta" : (s.source || "Meta"),
           }));
 
           setDbStatus("connected");
@@ -458,6 +474,8 @@ function CRMPage() {
       "Website",
       "Google Maps / Listing URL",
       "Source / Verification Note",
+      "Lead Status",
+      "Requirements",
       "Source URL",
       "Status",
     ];
@@ -474,6 +492,8 @@ function CRMPage() {
       `"${(item.website || "").replace(/"/g, '""')}"`,
       `"${(item.mapsUrl || "").replace(/"/g, '""')}"`,
       `"${(item.sourceNote || "").replace(/"/g, '""')}"`,
+      `"${(item.leadStatus || item.status || "New").replace(/"/g, '""')}"`,
+      `"${(item.requirements || "").replace(/"/g, '""')}"`,
       `"${(item.sourceUrl || "").replace(/"/g, '""')}"`,
       `"${(item.status || "New").replace(/"/g, '""')}"`,
     ]);
@@ -697,7 +717,6 @@ function CRMPage() {
   const handleOpenCreate = () => {
     setEditingId(null);
     setForm({ ...emptyForm });
-    setFormErrors({});
     setShowFormModal(true);
   };
 
@@ -707,20 +726,21 @@ function CRMPage() {
     setForm({
       source: lead.source || "Justdial",
       businessName: lead.businessName || "",
-      category: lead.category || "Hostel",
+      category: lead.category || "",
       genderType: lead.genderType || "Boys & Girls",
       primaryPhone: lead.primaryPhone || "",
       secondaryEmail: lead.secondaryEmail || "",
       website: lead.website || "",
       address: lead.address || "",
-      locality: lead.locality || "Pune",
+      locality: lead.locality || "",
       mapsUrl: lead.mapsUrl || "",
       sourceNote: lead.sourceNote || "",
       sourceUrl: lead.sourceUrl || "",
-      status: lead.status || "New",
+      status: lead.leadStatus || lead.status || "New",
+      leadStatus: lead.leadStatus || lead.status || "New",
+      requirements: lead.requirements || "",
       notes: lead.notes || "",
     });
-    setFormErrors({});
     setShowFormModal(true);
   };
 
@@ -728,41 +748,11 @@ function CRMPage() {
   const handleSaveForm = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const errors: Record<string, string> = {};
-
-    // 1. Business Name Validation
-    if (!form.businessName.trim()) {
-      errors.businessName = "Please enter the Business / Hostel Name.";
-    }
-
-    // 2. Primary Phone Validation (Formal phone format: 10-15 digits)
-    const rawPhone = (form.primaryPhone || "").trim();
-    const cleanPhone = rawPhone.replace(/[^0-9]/g, "");
-    if (!editingId && !rawPhone) {
-      errors.primaryPhone = "Formal phone number is required to add lead.";
-    } else if (rawPhone && (cleanPhone.length < 10 || cleanPhone.length > 15)) {
-      errors.primaryPhone = "Please enter a valid phone number (at least 10 digits, e.g. 9881060565 or +91 98810 60565).";
-    }
-
-    // 3. Secondary Email Validation (Formal email format: user@domain.com)
-    const rawEmail = (form.secondaryEmail || "").trim();
-    const formalEmailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-    if (!editingId && !rawEmail) {
-      errors.secondaryEmail = "Formal email address is required to add lead.";
-    } else if (rawEmail && !formalEmailRegex.test(rawEmail)) {
-      errors.secondaryEmail = "Please enter a formal email format (e.g. contact@hostel.com or admin@domain.org).";
-    }
-
-    if (Object.keys(errors).length > 0) {
-      setFormErrors(errors);
-      return;
-    }
-
-    setFormErrors({});
     setSaving(true);
 
     const payload = {
       ...form,
+      businessName: (form.businessName || "").trim() || "Untitled Lead",
       source: form.source || "Meta",
     };
 
@@ -830,10 +820,11 @@ function CRMPage() {
           });
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : "Connection refused";
       setFeedbackMsg({
         type: "error",
-        text: `Unable to connect to backend on port 5000: ${err?.message || "Connection refused"}. Please ensure backend server is running.`,
+        text: `Unable to connect to backend on port 5000: ${errMsg}. Please ensure backend server is running.`,
       });
       setDbStatus("local");
     } finally {
@@ -875,7 +866,8 @@ function CRMPage() {
           text: `Database delete failed: ${errData.message || res.statusText}`,
         });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : "Connection failed";
       // If network failed, remove locally and notify
       const filtered = leads.filter((l) => l.id !== lead.id);
       persistLeads(filtered);
@@ -884,7 +876,7 @@ function CRMPage() {
       }
       setFeedbackMsg({
         type: "error",
-        text: `Removed from local view, but could not reach backend to delete from database: ${err?.message || "Connection failed"}`,
+        text: `Removed from local view, but could not reach backend to delete from database: ${errMsg}`,
       });
     }
   };
@@ -1290,11 +1282,19 @@ function CRMPage() {
                     <th scope="col" className="p-3.5 min-w-[220px]">
                       Verification Note
                     </th>
-                    {/* 10. LINKS */}
+                    {/* 10. LEAD STATUS */}
+                    <th scope="col" className="p-3.5 w-36 text-center">
+                      Lead Status
+                    </th>
+                    {/* 11. REQUIREMENTS */}
+                    <th scope="col" className="p-3.5 min-w-[240px]">
+                      Requirements
+                    </th>
+                    {/* 12. LINKS */}
                     <th scope="col" className="p-3.5 w-24 text-center">
                       Links
                     </th>
-                    {/* 11. ACTIONS */}
+                    {/* 13. ACTIONS */}
                     <th scope="col" className="p-3.5 w-24 text-center">
                       Actions
                     </th>
@@ -1316,7 +1316,7 @@ function CRMPage() {
                         <td className="p-3.5 align-top">
                           <span className="inline-flex items-center gap-1.5 rounded-md bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700 border border-blue-200 shadow-2xs">
                             <span className="h-1.5 w-1.5 rounded-full bg-blue-600" />
-                            {lead.source || "Meta"}
+                            {lead.source && lead.source.toLowerCase().includes("whatsapp") ? "Meta" : (lead.source || "Meta")}
                           </span>
                         </td>
 
@@ -1463,7 +1463,46 @@ function CRMPage() {
                           </span>
                         </td>
 
-                        {/* 10. LINKS */}
+                        {/* 10. LEAD STATUS */}
+                        <td className="p-3.5 align-top text-center">
+                          <span
+                            className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold border shadow-2xs ${
+                              (lead.leadStatus || lead.status) === "New"
+                                ? "bg-blue-50 text-blue-700 border-blue-200"
+                                : (lead.leadStatus || lead.status) === "Contacted"
+                                ? "bg-blue-50 text-blue-700 border-blue-200"
+                                : (lead.leadStatus || lead.status) === "NotContacted"
+                                ? "bg-amber-50 text-amber-700 border-amber-200"
+                                : (lead.leadStatus || lead.status) === "Pending"
+                                ? "bg-purple-50 text-purple-700 border-purple-200"
+                                : (lead.leadStatus || lead.status) === "Quotation Sent"
+                                ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                                : (lead.leadStatus || lead.status) === "Closed"
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : (lead.leadStatus || lead.status) === "Cold"
+                                ? "bg-rose-50 text-rose-700 border-rose-200"
+                                : "bg-gray-100 text-gray-700 border-gray-200"
+                            }`}
+                          >
+                            {lead.leadStatus || lead.status || "New"}
+                          </span>
+                        </td>
+
+                        {/* 11. REQUIREMENTS */}
+                        <td className="p-3.5 align-top text-xs text-gray-700 max-w-xs">
+                          {lead.requirements ? (
+                            <span
+                              className="font-medium text-gray-800 leading-relaxed line-clamp-2"
+                              title={lead.requirements}
+                            >
+                              {lead.requirements}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400 italic">No specific requirements</span>
+                          )}
+                        </td>
+
+                        {/* 12. LINKS */}
                         <td className="p-3.5 align-top text-center">
                           {lead.sourceUrl ? (
                             <a
@@ -1708,11 +1747,10 @@ function CRMPage() {
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      Source (Directory) <span className="text-red-500">*</span>
+                      Source (Directory)
                     </label>
                     <input
                       type="text"
-                      required
                       value={form.source}
                       onChange={(e) => setForm((p) => ({ ...p, source: e.target.value }))}
                       placeholder="e.g. Justdial, Vidyasagar Academy, OpenAlfa..."
@@ -1728,33 +1766,25 @@ function CRMPage() {
 
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      Business / Hostel Name <span className="text-red-500">*</span>
+                      Business / Hostel Name
                     </label>
                     <input
                       type="text"
-                      required
                       value={form.businessName}
-                      onChange={(e) => {
-                        setForm((p) => ({ ...p, businessName: e.target.value }));
-                        if (formErrors.businessName) setFormErrors((p) => ({ ...p, businessName: "" }));
-                      }}
+                      onChange={(e) => setForm((p) => ({ ...p, businessName: e.target.value }))}
                       placeholder="e.g. Saraswati Boys Hostel"
-                      className={`${inputClass} ${formErrors.businessName ? "border-red-500 ring-1 ring-red-500" : ""}`}
+                      className={inputClass}
                     />
-                    {formErrors.businessName && (
-                      <p className="mt-1 text-[11px] font-semibold text-red-600">{formErrors.businessName}</p>
-                    )}
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      Category <span className="text-red-500">*</span>
+                      Category
                     </label>
                     <input
                       type="text"
-                      required
                       value={form.category}
                       onChange={(e) => setForm((p) => ({ ...p, category: e.target.value }))}
                       placeholder="e.g. Boys hostel, PG..."
@@ -1770,7 +1800,7 @@ function CRMPage() {
 
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      Gender / Resident Type <span className="text-red-500">*</span>
+                      Gender / Resident Type
                     </label>
                     <select
                       value={form.genderType}
@@ -1787,11 +1817,10 @@ function CRMPage() {
 
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      Locality (Area in Pune) <span className="text-red-500">*</span>
+                      Locality (Area in Pune)
                     </label>
                     <input
                       type="text"
-                      required
                       value={form.locality}
                       onChange={(e) => setForm((p) => ({ ...p, locality: e.target.value }))}
                       placeholder="e.g. Narhe, Hinjewadi, Kharadi..."
@@ -1804,51 +1833,29 @@ function CRMPage() {
                   <div>
                     <label className="block text-xs font-semibold text-emerald-800 mb-1 flex items-center gap-1">
                       <Phone className="h-3.5 w-3.5" />
-                      Public Phone Number (Primary Contact) <span className="text-red-500">*</span>
+                      Public Phone Number (Primary Contact)
                     </label>
                     <input
                       type="tel"
-                      required
                       value={form.primaryPhone}
-                      onChange={(e) => {
-                        setForm((p) => ({ ...p, primaryPhone: e.target.value }));
-                        if (formErrors.primaryPhone) setFormErrors((p) => ({ ...p, primaryPhone: "" }));
-                      }}
+                      onChange={(e) => setForm((p) => ({ ...p, primaryPhone: e.target.value }))}
                       placeholder="e.g. 9881060565 or +91 98810 60565"
-                      className={`${inputClass} ${
-                        formErrors.primaryPhone ? "border-red-500 ring-1 ring-red-500" : "border-emerald-300 focus:border-emerald-500"
-                      }`}
+                      className={`${inputClass} border-emerald-300 focus:border-emerald-500`}
                     />
-                    {formErrors.primaryPhone ? (
-                      <p className="mt-1 text-[11px] font-semibold text-red-600">{formErrors.primaryPhone}</p>
-                    ) : (
-                      <p className="mt-1 text-[10px] text-gray-400">Must be a valid formal phone number (10 to 15 digits)</p>
-                    )}
                   </div>
 
                   <div>
                     <label className="block text-xs font-semibold text-blue-800 mb-1 flex items-center gap-1">
                       <Mail className="h-3.5 w-3.5" />
-                      Public Email (Secondary Contact) <span className="text-red-500">*</span>
+                      Public Email (Secondary Contact)
                     </label>
                     <input
                       type="email"
-                      required
                       value={form.secondaryEmail}
-                      onChange={(e) => {
-                        setForm((p) => ({ ...p, secondaryEmail: e.target.value }));
-                        if (formErrors.secondaryEmail) setFormErrors((p) => ({ ...p, secondaryEmail: "" }));
-                      }}
+                      onChange={(e) => setForm((p) => ({ ...p, secondaryEmail: e.target.value }))}
                       placeholder="e.g. admin@mvpm.org or info@hostel.com"
-                      className={`${inputClass} ${
-                        formErrors.secondaryEmail ? "border-red-500 ring-1 ring-red-500" : "border-blue-200 focus:border-blue-500"
-                      }`}
+                      className={`${inputClass} border-blue-200 focus:border-blue-500`}
                     />
-                    {formErrors.secondaryEmail ? (
-                      <p className="mt-1 text-[11px] font-semibold text-red-600">{formErrors.secondaryEmail}</p>
-                    ) : (
-                      <p className="mt-1 text-[10px] text-gray-400">Must be a formal email format (e.g. user@domain.com)</p>
-                    )}
                   </div>
                 </div>
 
@@ -1888,6 +1895,38 @@ function CRMPage() {
                       value={form.sourceNote}
                       onChange={(e) => setForm((p) => ({ ...p, sourceNote: e.target.value }))}
                       placeholder="e.g. Vidyasagar Academy hostel list"
+                      className={inputClass}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      Lead Status
+                    </label>
+                    <select
+                      value={form.leadStatus || form.status || "New"}
+                      onChange={(e) => setForm((p) => ({ ...p, status: e.target.value, leadStatus: e.target.value }))}
+                      className={inputClass}
+                    >
+                      {STATUS_OPTIONS.map((st) => (
+                        <option key={st} value={st}>
+                          {st}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      Client Requirements
+                    </label>
+                    <input
+                      type="text"
+                      value={form.requirements || ""}
+                      onChange={(e) => setForm((p) => ({ ...p, requirements: e.target.value }))}
+                      placeholder="e.g. 50 Single Bunk Beds, 30 Study Desks..."
                       className={inputClass}
                     />
                   </div>
@@ -1952,7 +1991,9 @@ function CRMPage() {
                     <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
                       Source
                     </span>
-                    <p className="mt-1 font-bold text-gray-900">{viewingLead.source}</p>
+                    <p className="mt-1 font-bold text-gray-900">
+                      {viewingLead.source && viewingLead.source.toLowerCase().includes("whatsapp") ? "Meta" : (viewingLead.source || "Meta")}
+                    </p>
                   </div>
                   <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-3">
                     <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
@@ -2067,7 +2108,7 @@ function CRMPage() {
                 {(viewingLead.sourceNote || viewingLead.sourceUrl) && (
                   <div className="rounded-lg border border-blue-100 bg-blue-50/40 p-3 space-y-1.5">
                     <span className="text-[11px] font-semibold text-blue-900 uppercase tracking-wider">
-                      Directory Source Reference
+                      Directory Source Reference (Verification Note)
                     </span>
                     {viewingLead.sourceNote && (
                       <p className="text-gray-700">{viewingLead.sourceNote}</p>
@@ -2085,6 +2126,45 @@ function CRMPage() {
                     )}
                   </div>
                 )}
+
+                {/* Lead Status & Requirements */}
+                <div className="rounded-lg border border-purple-100 bg-purple-50/40 p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-purple-900 uppercase tracking-wider">
+                      Lead Status
+                    </span>
+                    <span
+                      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold border shadow-2xs ${
+                        (viewingLead.leadStatus || viewingLead.status) === "New"
+                          ? "bg-blue-50 text-blue-700 border-blue-200"
+                          : (viewingLead.leadStatus || viewingLead.status) === "Contacted"
+                          ? "bg-amber-50 text-amber-700 border-amber-200"
+                          : (viewingLead.leadStatus || viewingLead.status) === "Not Contacted"
+                          ? "bg-amber-50 text-amber-700 border-amber-200"
+                          : (viewingLead.leadStatus || viewingLead.status) === "Pending"
+                          ? "bg-purple-50 text-purple-700 border-purple-200"
+                          : (viewingLead.leadStatus || viewingLead.status) === "Quotation Sent"
+                          ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                          : (viewingLead.leadStatus || viewingLead.status) === "Closed"
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : "bg-gray-100 text-gray-700 border-gray-200"
+                      }`}
+                    >
+                      {viewingLead.leadStatus || viewingLead.status || "New"}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-[11px] font-semibold text-purple-900 uppercase tracking-wider">
+                      Requirements
+                    </span>
+                    <p className="mt-1 text-xs text-gray-800 leading-relaxed font-medium">
+                      {viewingLead.requirements || (
+                        <span className="text-gray-400 italic font-normal">No specific requirements recorded yet.</span>
+                      )}
+                    </p>
+                  </div>
+                </div>
               </div>
 
               <div className="mt-5 flex items-center justify-end gap-2 border-t pt-3">
