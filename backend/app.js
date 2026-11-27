@@ -23,6 +23,7 @@ const projectRoutes = require("./routes/projectRoutes");
 const dispatchRoutes = require("./routes/dispatchRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
 const productRoutes = require("./routes/productRoutes");
+const accountRoutes = require("./routes/accountRoutes");
 
 const app = express();
 
@@ -149,6 +150,9 @@ app.use("/reports", reportsRoutes);
 // Master Products routes
 app.use("/api/products", productRoutes);
 app.use("/products", productRoutes);
+
+// Account routes
+app.use("/api/accounts", accountRoutes);
 
 module.exports = app;
 
