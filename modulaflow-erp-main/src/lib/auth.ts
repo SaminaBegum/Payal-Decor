@@ -128,7 +128,7 @@ function saveSession(user: AuthUser, token: string) {
 export async function loginWithRole(
   email: string,
   password: string,
-  selectedRole: UserRole
+  selectedRole?: UserRole
 ): Promise<LoginResult> {
   if (!email.trim() || !password) {
     return {
@@ -178,7 +178,7 @@ export async function loginWithRole(
       };
     }
 
-    if (actualRole !== selectedRole) {
+    if (selectedRole && actualRole !== selectedRole) {
       return {
         success: false,
         error: `This account is registered as ${actualRole}. Please select ${actualRole} to sign in.`,
@@ -230,7 +230,12 @@ export async function loginWithRole(
     };
   }
 }
-
+export function loginWithCredentials(
+  email: string,
+  password: string
+): Promise<LoginResult> {
+  return loginWithRole(email, password);
+}
 // Compatibility wrapper for the existing Admin login flow.
 export async function loginAdmin(
   id: string,
