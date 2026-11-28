@@ -21,7 +21,6 @@ const reportsRoutes = require("./routes/reportsRoutes");
 const installationRoutes = require("./routes/installationRoutes");
 const projectRoutes = require("./routes/projectRoutes");
 const dispatchRoutes = require("./routes/dispatchRoutes");
-const paymentRoutes = require("./routes/paymentRoutes");
 const productRoutes = require("./routes/productRoutes");
 
 const app = express();
@@ -51,6 +50,9 @@ const authLimiter = rateLimit({
 const operationsRoutes = require("./routes/operationsRoutes");
 const employeeRoutes = require("./routes/employeeRoutes");
 const attendanceRoutes = require("./routes/attendanceRoutes");
+const adminAttendanceRoutes = require("./routes/adminAttendanceRoutes");
+const leaveRoutes = require("./routes/leaveRoutes");
+const adminLeaveRoutes = require("./routes/adminLeaveRoutes");
 // General rate limiter for all API endpoints
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -91,6 +93,9 @@ app.use(
 app.use("/api/operations", operationsRoutes);
 app.use("/api/employees", employeeRoutes);
 app.use("/api/attendance", attendanceRoutes);
+app.use("/api/admin/attendance", adminAttendanceRoutes);
+app.use("/api/leaves", leaveRoutes);
+app.use("/api/admin/leaves", adminLeaveRoutes);
 
 // CRM routes
 app.use("/api/crm", crmRoutes);
@@ -134,9 +139,6 @@ app.use("/api/projects", projectRoutes);
 // Dispatch & Delivery routes
 app.use("/api/dispatches", dispatchRoutes);
 
-// Payment routes
-app.use("/api/payments", paymentRoutes);
-
 // Purchase Order routes
 app.use("/api/purchase", purchaseRoutes);
 app.use("/purchase", purchaseRoutes);
@@ -151,4 +153,3 @@ app.use("/api/products", productRoutes);
 app.use("/products", productRoutes);
 
 module.exports = app;
-

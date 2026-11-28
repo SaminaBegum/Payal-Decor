@@ -1,4 +1,4 @@
-﻿import { useMemo } from "react";
+import { useMemo } from "react";
 import {
   BrowserRouter,
   Navigate,
@@ -48,6 +48,11 @@ import SiteVisitMeasurementPage from "./routes/site-visit-measurement";
 import VendorsPage from "./routes/vendors";
 import WorkOrdersPage from "./routes/work-orders";
 import EmployeeDashboardPage from "./routes/employee-dashboard";
+import EmployeeTasksPage from "./routes/employee-tasks";
+import AdminAttendancePage from "./routes/admin-attendance";
+import EmployeeAttendance from "./routes/employee-attendance";
+import AdminLeavesPage from "./routes/admin-leaves";
+import EmployeeLeaves from "./routes/employee-leaves";
 
 function RequireAuth() {
   const location = useLocation();
@@ -116,8 +121,14 @@ function AppRoutes() {
       <Route element={<RequireAuth />}>
         <Route element={<RequireEmployee />}>
           <Route path="/employee-dashboard" element={<EmployeeDashboardPage />} />
+
+  <Route path="/employee-tasks" element={<EmployeeTasksPage />} />
+          <Route path="/employee-attendance" element={<EmployeeAttendance />} />
+          <Route path="/employee-leaves" element={<EmployeeLeaves />} />
         </Route>
         <Route element={<RequireNonEmployee />}>
+          <Route path="/admin/attendance" element={<AdminAttendancePage />} />
+          <Route path="/admin/leaves" element={<AdminLeavesPage />} />
         <Route path="/" element={<Dashboard />} />
         <Route path="/accounts" element={<Accounts />} />
         <Route path="/crm" element={<CRMPage />} />

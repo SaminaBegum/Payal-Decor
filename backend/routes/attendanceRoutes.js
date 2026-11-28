@@ -1,8 +1,29 @@
-const express = require("express");
+﻿const express = require("express");
 const router = express.Router();
 
-router.get("/", (req, res) => {
-  return res.status(200).json({ success: true, message: "Attendance route active", data: [] });
-});
+const authMiddleware = require("../middleware/authMiddleware");
+const roleMiddleware = require("../middleware/roleMiddleware");
+
+const {
+  getMyAttendanceStatus,
+  employeeCheckIn,
+  employeeCheckOut,
+  getAttendanceHistory,
+  submitDailyProgress,
+  getDailyProgressHistory,
+} = require("../controllers/attendanceController");
+
+// All attendance endpoints require authentication.
+router.use(authMiddleware);
+
+// Employee-only self-service endpoints.
+router.use(roleMiddleware("Employee"));
+
+router.get("/today", getMyAttendanceStatus);
+router.post("/check-in", employeeCheckIn);
+router.post("/check-out", employeeCheckOut);
+router.get("/history", getAttendanceHistory);
+router.post("/progress", submitDailyProgress);
+router.get("/progress", getDailyProgressHistory);
 
 module.exports = router;

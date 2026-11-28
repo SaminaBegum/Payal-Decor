@@ -1,10 +1,11 @@
-﻿import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
   CheckSquare,
   FolderKanban,
   TrendingUp,
   Clock,
+  CalendarDays,
   UserRound,
   Bell,
   CircleHelp,
@@ -23,6 +24,7 @@ const EMPLOYEE_NAV = [
   { label: "My Projects", icon: FolderKanban, to: "/employee-projects" },
   { label: "Daily Progress", icon: TrendingUp, to: "/employee-progress" },
   { label: "My Attendance", icon: Clock, to: "/employee-attendance" },
+  { label: "My Leaves", icon: CalendarDays, to: "/employee-leaves" },
   { label: "My Profile", icon: UserRound, to: "/employee-profile" },
   { label: "Notifications", icon: Bell, to: "/employee-notifications" },
   { label: "Help & Support", icon: CircleHelp, to: "/employee-help" },
