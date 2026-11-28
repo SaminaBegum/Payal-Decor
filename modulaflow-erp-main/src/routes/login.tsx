@@ -1,54 +1,24 @@
-﻿
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  Eye,
-  EyeOff,
-  ArrowRight,
-  ShieldCheck,
-  UserCheck,
-  BriefcaseBusiness,
-} from "lucide-react";
-import {
-  loginWithRole,
-  type UserRole,
-} from "@/lib/auth";
+import { Eye, EyeOff, ArrowRight, LogIn } from "lucide-react";
+import { loginWithCredentials, type UserRole } from "@/lib/auth";
+
+// Where each role lands after login. The role comes from the server response,
+// never from anything the user picks on this page.
+const ROLE_HOME: Record<UserRole, string> = {
+  Admin: "/",
+  Manager: "/", // change when a manager dashboard route exists
+  Employee: "/employee-dashboard",
+};
 
 function LoginPage() {
   const navigate = useNavigate();
 
-  const [loginRole, setLoginRole] = useState<UserRole>("Admin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const roles: {
-    value: UserRole;
-    title: string;
-    description: string;
-    icon: typeof ShieldCheck;
-  }[] = [
-    {
-      value: "Admin",
-      title: "Admin",
-      description: "Full system access",
-      icon: ShieldCheck,
-    },
-    {
-      value: "Manager",
-      title: "Manager",
-      description: "Department and team access",
-      icon: BriefcaseBusiness,
-    },
-    {
-      value: "Employee",
-      title: "Employee",
-      description: "Assigned tasks and workspace",
-      icon: UserCheck,
-    },
-  ];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,23 +32,16 @@ function LoginPage() {
     try {
       setIsSubmitting(true);
 
-      const result = await loginWithRole(
-        email.trim(),
-        password,
-        loginRole
-      );
+      const result = await loginWithCredentials(email.trim(), password);
 
-      if (!result.success) {
-        setError(result.error || "Login failed. Please try again.");
+      if (!result.success || !result.user) {
+        setError(result.error || "Invalid email or password.");
         return;
       }
 
-     // Redirect users according to their authenticated role.
-if (loginRole === "Employee") {
-  navigate("/employee-dashboard", { replace: true });
-} else {
-  navigate("/", { replace: true });
-}
+      // Redirect using the role verified by the server.
+      const destination = ROLE_HOME[result.user.role] ?? "/";
+      navigate(destination, { replace: true });
     } catch {
       setError("Unable to sign in. Please try again.");
     } finally {
@@ -102,53 +65,11 @@ if (loginRole === "Employee") {
             Sign in to ERP
           </h1>
           <p className="mt-1 text-sm text-[#7A6A5C]">
-            Select your role to access your workspace.
+            Sign in to access your workspace.
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-5" noValidate>
-          {/* Role selection */}
-          <div>
-            <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-[#1F1710]">
-              Sign In As <span className="text-red-500">*</span>
-            </label>
-
-            <div className="grid grid-cols-3 gap-2">
-              {roles.map((role) => {
-                const Icon = role.icon;
-                const selected = loginRole === role.value;
-
-                return (
-                  <button
-                    key={role.value}
-                    type="button"
-                    aria-pressed={selected}
-                    onClick={() => {
-                      setLoginRole(role.value);
-                      setError("");
-                      setPassword("");
-                    }}
-                    className={`flex min-h-[108px] flex-col items-center justify-center rounded-xl border p-3 text-center transition ${
-                      selected
-                        ? "border-[#B05A00] bg-[#FFF5EA] text-[#954C00] ring-2 ring-[#B05A00]/20"
-                        : "border-[#E3D6CA] bg-white text-[#7A6A5C] hover:border-[#B05A00]/50 hover:bg-[#FAF7F4]"
-                    }`}
-                  >
-                    <Icon size={22} className="mb-2" />
-
-                    <span className="text-xs font-bold">
-                      {role.title}
-                    </span>
-
-                    <span className="mt-1 text-[10px] leading-tight">
-                      {role.description}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
           {/* Registered email */}
           <div>
             <label
@@ -162,6 +83,7 @@ if (loginRole === "Employee") {
               id="login-email"
               type="email"
               autoComplete="username"
+              autoFocus
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="Enter your registered email"
@@ -195,11 +117,7 @@ if (loginRole === "Employee") {
                 aria-label={showPassword ? "Hide password" : "Show password"}
                 className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1.5 text-[#7A6A5C] hover:text-[#1F1710]"
               >
-                {showPassword ? (
-                  <EyeOff size={18} />
-                ) : (
-                  <Eye size={18} />
-                )}
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
           </div>
@@ -224,8 +142,8 @@ if (loginRole === "Employee") {
               "Signing in..."
             ) : (
               <>
-                <ShieldCheck size={16} />
-                Sign in as {loginRole}
+                <LogIn size={16} />
+                Sign in
                 <ArrowRight size={16} />
               </>
             )}
@@ -243,4 +161,3 @@ if (loginRole === "Employee") {
 }
 
 export default LoginPage;
-

@@ -1,9 +1,9 @@
-const express = require("express");
+﻿const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const corsOptions = require("./config/cors");
-
+const dashboardRoutes = require("./routes/dashboardRoutes");
 // Import routes
 const authRoutes = require("./routes/authRoutes");
 const crmRoutes = require("./routes/crmRoutes");
@@ -22,7 +22,9 @@ const installationRoutes = require("./routes/installationRoutes");
 const projectRoutes = require("./routes/projectRoutes");
 const dispatchRoutes = require("./routes/dispatchRoutes");
 const productRoutes = require("./routes/productRoutes");
-
+const authMiddleware = require("./middleware/authMiddleware");
+const roleMiddleware = require("./middleware/roleMiddleware");
+const staff = [authMiddleware, roleMiddleware("Admin", "Manager")];
 const app = express();
 
 // Security HTTP headers
@@ -151,5 +153,6 @@ app.use("/reports", reportsRoutes);
 // Master Products routes
 app.use("/api/products", productRoutes);
 app.use("/products", productRoutes);
+app.use("/api/dashboard", ...staff, dashboardRoutes);
 
 module.exports = app;
