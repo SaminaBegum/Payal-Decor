@@ -1,6 +1,33 @@
 ﻿const pool = require("../config/db");
 const { getAllBOMs } = require("./bomModel");
 
+let tableReady = null;
+function ensureTable() {
+  if (!tableReady) {
+    tableReady = (async () => {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS public.production_jobs (
+          id SERIAL PRIMARY KEY,
+          work_order_no VARCHAR(50) NOT NULL,
+          bom_id VARCHAR(50),
+          product_name VARCHAR(255) NOT NULL,
+          quantity INTEGER DEFAULT 1,
+          current_stage VARCHAR(50) DEFAULT 'Pending',
+          department VARCHAR(100) DEFAULT 'Production',
+          deadline DATE,
+          notes TEXT,
+          created_at TIMESTAMP DEFAULT NOW(),
+          updated_at TIMESTAMP DEFAULT NOW()
+        )
+      `);
+    })().catch((err) => {
+      tableReady = null;
+      throw err;
+    });
+  }
+  return tableReady;
+}
+
 const COLUMNS = `
   id,
   work_order_no AS "workOrderNo",
@@ -40,6 +67,7 @@ const attachBoms = async (rows) => {
 };
 
 const getAllJobs = async () => {
+  await ensureTable();
   const result = await pool.query(
     `SELECT ${COLUMNS} FROM public.production_jobs ORDER BY id DESC`
   );
@@ -47,6 +75,7 @@ const getAllJobs = async () => {
 };
 
 const getJobById = async (id) => {
+  await ensureTable();
   const result = await pool.query(
     `SELECT ${COLUMNS} FROM public.production_jobs WHERE id = $1`,
     [id]
@@ -57,6 +86,7 @@ const getJobById = async (id) => {
 };
 
 const createJob = async (p) => {
+  await ensureTable();
   const result = await pool.query(
     `INSERT INTO public.production_jobs
       (work_order_no, bom_id, product_name, quantity, current_stage, department, deadline, notes)
@@ -68,6 +98,7 @@ const createJob = async (p) => {
 };
 
 const updateJob = async (id, p) => {
+  await ensureTable();
   const result = await pool.query(
     `UPDATE public.production_jobs SET
       work_order_no=$1, bom_id=$2, product_name=$3, quantity=$4,
@@ -82,6 +113,7 @@ const updateJob = async (id, p) => {
 };
 
 const deleteJob = async (id) => {
+  await ensureTable();
   const result = await pool.query(
     "DELETE FROM public.production_jobs WHERE id = $1 RETURNING id",
     [id]

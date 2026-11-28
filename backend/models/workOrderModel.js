@@ -1,5 +1,35 @@
 const pool = require("../config/db");
 
+let tableReady = null;
+function ensureTable() {
+  if (!tableReady) {
+    tableReady = (async () => {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS public.work_orders (
+          id SERIAL PRIMARY KEY,
+          work_order_no VARCHAR(50) UNIQUE NOT NULL,
+          sales_order_id INTEGER,
+          sales_order_no VARCHAR(50),
+          customer_name VARCHAR(255) NOT NULL,
+          project_name VARCHAR(255) NOT NULL,
+          start_date DATE NOT NULL,
+          due_date DATE,
+          priority VARCHAR(20) DEFAULT 'Medium',
+          status VARCHAR(30) DEFAULT 'Draft',
+          notes TEXT,
+          items JSONB DEFAULT '[]'::jsonb,
+          created_at TIMESTAMP DEFAULT NOW(),
+          updated_at TIMESTAMP DEFAULT NOW()
+        )
+      `);
+    })().catch((err) => {
+      tableReady = null;
+      throw err;
+    });
+  }
+  return tableReady;
+}
+
 const COLUMNS = `
   id,
   work_order_no AS "workOrderNo",
@@ -31,6 +61,7 @@ const toValues = (p) => [
 ];
 
 const getAllWorkOrders = async () => {
+  await ensureTable();
   const result = await pool.query(
     `SELECT ${COLUMNS} FROM public.work_orders ORDER BY id DESC`
   );
@@ -38,6 +69,7 @@ const getAllWorkOrders = async () => {
 };
 
 const createWorkOrder = async (p) => {
+  await ensureTable();
   const result = await pool.query(
     `INSERT INTO public.work_orders (
       work_order_no, sales_order_id, sales_order_no, customer_name, project_name,
@@ -51,6 +83,7 @@ const createWorkOrder = async (p) => {
 };
 
 const updateWorkOrder = async (id, p) => {
+  await ensureTable();
   const result = await pool.query(
     `UPDATE public.work_orders SET
       work_order_no=$1, sales_order_id=$2, sales_order_no=$3, customer_name=$4, project_name=$5,
@@ -64,6 +97,7 @@ const updateWorkOrder = async (id, p) => {
 };
 
 const deleteWorkOrder = async (id) => {
+  await ensureTable();
   const result = await pool.query(
     "DELETE FROM public.work_orders WHERE id = $1 RETURNING id",
     [id]

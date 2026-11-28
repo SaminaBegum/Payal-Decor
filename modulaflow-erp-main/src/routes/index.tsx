@@ -27,6 +27,14 @@ import {
   ArrowRight,
   CheckCircle2,
   TrendingUp,
+  Users,
+  ShoppingBag,
+  Truck,
+  Wrench,
+  BookOpen,
+  BarChart3,
+  Boxes,
+  Settings,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -116,6 +124,24 @@ const WORDS: [string, string, string][] = [
   ["Other Accessories", "इतर ॲक्सेसरीज", "अन्य एक्सेसरीज़"],
 
   // Quick links
+  ["CRM", "CRM", "CRM"],
+  ["Projects", "प्रकल्प", "प्रोजेक्ट्स"],
+  ["Estimation & BOQ", "अंदाज आणि BOQ", "अनुमान और BOQ"],
+  ["Quotations", "कोटेशन", "कोटेशन"],
+  ["Sales Orders", "विक्री ऑर्डर्स", "सेल्स ऑर्डर्स"],
+  ["Work Orders", "वर्क ऑर्डर्स", "वर्क ऑर्डर्स"],
+  ["Production", "उत्पादन", "उत्पादन"],
+  ["Inventory", "इन्व्हेंटरी", "इन्वेंटरी"],
+  ["Purchase", "खरेदी", "खरीद"],
+  ["Vendors", "विक्रेते", "विक्रेता"],
+  ["Dispatch & Delivery", "डिस्पॅच आणि डिलिव्हरी", "डिस्पैच और डिलीवरी"],
+  ["Installation", "इन्स्टॉलेशन", "इंस्टॉलेशन"],
+  ["Invoicing", "इन्व्हॉइसिंग", "इनवॉइसिंग"],
+  ["Payments", "पेमेंट्स", "भुगतान"],
+  ["Accounts", "अकाउंट्स", "खाते"],
+  ["Reports", "अहवाल", "रिपोर्ट्स"],
+  ["Masters", "मास्टर्स", "मास्टर्स"],
+  ["Admin", "प्रशासक", "प्रशासन"],
   ["New Project", "नवीन प्रकल्प", "नया प्रोजेक्ट"],
   ["New BOQ", "नवीन BOQ", "नया BOQ"],
   ["New Quotation", "नवीन कोटेशन", "नया कोटेशन"],
@@ -322,14 +348,24 @@ function ViewAll({ to }: { to?: string }) {
 }
 
 const QUICK_LINKS: { label: string; icon: LucideIcon; to: string; tag: string }[] = [
-  { label: "New Project", icon: FolderPlus, to: "/projects", tag: "Projects" },
-  { label: "New BOQ", icon: Calculator, to: "/estimation", tag: "Estimation" },
-  { label: "New Quotation", icon: FilePlus2, to: "/quotations", tag: "Sales" },
-  { label: "New Sales Order", icon: ShoppingCart, to: "/sales-orders", tag: "Orders" },
-  { label: "New Invoice", icon: ReceiptIndianRupee, to: "/invoicing", tag: "Billing" },
-  { label: "New Work Order", icon: ClipboardPlus, to: "/work-orders", tag: "Factory" },
-  { label: "Add Material", icon: PackagePlus, to: "/inventory", tag: "Stock" },
-  { label: "Add Vendor", icon: UserPlus, to: "/vendors", tag: "Vendors" },
+  { label: "CRM", icon: Users, to: "/crm", tag: "Sales" },
+  { label: "Projects", icon: FolderPlus, to: "/projects", tag: "Projects" },
+  { label: "Estimation & BOQ", icon: Calculator, to: "/estimation", tag: "Estimation" },
+  { label: "Quotations", icon: FilePlus2, to: "/quotations", tag: "Sales" },
+  { label: "Sales Orders", icon: ShoppingCart, to: "/sales-orders", tag: "Orders" },
+  { label: "Work Orders", icon: ClipboardPlus, to: "/work-orders", tag: "Factory" },
+  { label: "Production", icon: Factory, to: "/production", tag: "Workshop" },
+  { label: "Inventory", icon: PackagePlus, to: "/inventory", tag: "Stock" },
+  { label: "Purchase", icon: ShoppingBag, to: "/purchase", tag: "Procurement" },
+  { label: "Vendors", icon: UserPlus, to: "/vendors", tag: "Suppliers" },
+  { label: "Dispatch & Delivery", icon: Truck, to: "/dispatch", tag: "Logistics" },
+  { label: "Installation", icon: Wrench, to: "/installation", tag: "Services" },
+  { label: "Invoicing", icon: ReceiptIndianRupee, to: "/invoicing", tag: "Billing" },
+  { label: "Payments", icon: Wallet, to: "/payments", tag: "Finance" },
+  { label: "Accounts", icon: BookOpen, to: "/accounts", tag: "Finance" },
+  { label: "Reports", icon: BarChart3, to: "/reports", tag: "Analytics" },
+  { label: "Masters", icon: Boxes, to: "/masters", tag: "Config" },
+  { label: "Admin", icon: Settings, to: "/admin", tag: "System" },
 ];
 
 const ACTIVITY_ICON = {
@@ -703,7 +739,7 @@ function Dashboard() {
         subtitle="One-click access to create records and manage modules"
         className="mt-4"
       >
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-9">
           {QUICK_LINKS.map((q) => (
             <Link
               key={q.label}
