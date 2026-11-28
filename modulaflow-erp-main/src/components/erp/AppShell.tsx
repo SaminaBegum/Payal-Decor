@@ -21,6 +21,7 @@ import {
   ChevronDown,
   Menu,
   CheckSquare,
+  CalendarDays,
   type LucideIcon,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -41,6 +42,8 @@ interface NavItem {
 const NAV: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, to: "/" },
   { label: "Operations", icon: CheckSquare, to: "/operations" },
+  { label: "Attendance", icon: CalendarDays, to: "/admin/attendance" },
+  { label: "Leaves", icon: ClipboardList, to: "/admin/leaves" },
   { label: "CRM", icon: Users, to: "/crm" },
   { label: "Projects", icon: FolderKanban, to: "/projects" },
   { label: "Estimation & BOQ", icon: Calculator, to: "/estimation" },
